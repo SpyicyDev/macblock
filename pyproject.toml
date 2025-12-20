@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "macblock"
+version = "0.0.0"
+description = "Local DNS sinkhole for macOS (dnsmasq + PF)"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "macblock contributors" }]
+keywords = ["dns", "macblock", "dnsmasq", "macos", "pf"]
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "ruff>=0.8.0",
+  "pyright>=1.1.390",
+]
+
+[project.scripts]
+macblock = "macblock.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+macblock = ["templates/*.conf", "templates/*.plist", "templates/*.tmpl"]
+
+[tool.pyright]
+extraPaths = ["src"]
