@@ -2,7 +2,7 @@
 
 ## 1) Remove system integration (do this first)
 
-This removes PF rules, LaunchDaemons, and state/config under `/Library` and `/var/db`.
+This removes LaunchDaemons, system DNS changes, and state/config under `/Library` and `/var/db`.
 
 ```bash
 sudo macblock uninstall
@@ -40,7 +40,8 @@ sudo chown -R $(whoami):admin <path>
 
 ## What is removed by `sudo macblock uninstall`
 
-- PF anchor rules and the `pf.conf` include block.
 - `launchd` jobs created by `macblock`.
 - State/config directories under `/Library/Application Support/macblock`.
-- Dynamic upstream state under `/var/db/macblock`.
+- Logs under `/Library/Logs/macblock`.
+- Dynamic state under `/var/db/macblock`.
+- If you upgraded from older versions: `sudo macblock uninstall` also removes any `/etc/resolver/*` files that were previously created by `macblock`.

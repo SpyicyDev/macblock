@@ -1,16 +1,17 @@
 # macblock
 
-Local DNS sinkhole for macOS using `dnsmasq` (on `127.0.0.1:5300`) plus PF redirection of outbound DNS (`:53`) to the local resolver.
+Local DNS sinkhole for macOS using `dnsmasq` (on `127.0.0.1:53`) plus per-network-service DNS rewriting to `127.0.0.1` via `networksetup`.
 
-This project intentionally does **not** set system DNS servers to `127.0.0.1`. It follows system resolver selection (including split DNS from VPNs) by periodically translating macOS resolver state into `dnsmasq` `server=` rules.
+`macblock` maintains a local `dnsmasq` instance and dynamically generates `dnsmasq` upstream `server=` rules (including split-DNS) from macOS resolver state.
 
 ## Status
 
-This repo is scaffolded and implements:
-- `sudo macblock install` installs PF + launchd + root-owned state/config locations.
-- `sudo macblock enable|disable|pause|resume` toggles PF interception and pause scheduling.
+This repo implements:
+- `sudo macblock install` installs `launchd` jobs plus root-owned state/config locations.
+- `sudo macblock enable|disable|pause|resume` toggles system DNS to localhost and schedules pause/resume.
 - `sudo macblock update` downloads and compiles a hosts-format blocklist.
 - `sudo macblock allow|deny` manages whitelist/blacklist and recompiles.
+- `macblock logs` tails daemon logs for visibility.
 
 ## Install (dev)
 
@@ -43,6 +44,7 @@ sudo macblock enable
 
 - `macblock status`
 - `macblock doctor`
+- `macblock logs [--component daemon|dnsmasq] [--follow]`
 - `sudo macblock install [--force]`
 - `sudo macblock uninstall [--force]`
 - `sudo macblock enable|disable`
@@ -70,7 +72,7 @@ If you run `brew uninstall` first, `macblock` may no longer be available to remo
 
 ## Notes
 
-- PF conflicts: other DNS tools that install PF redirection rules may conflict. `macblock` should refuse or require manual resolution.
-- Encrypted DNS (DoH/DoT): PF interception does not affect encrypted DNS.
+- Encrypted DNS (DoH/DoT): can bypass system DNS settings entirely.
+- VPNs: may install scoped resolvers; if you see odd behavior, check `macblock doctor` and `macblock logs`.
 
 See `SECURITY.md` for threat model and design constraints.

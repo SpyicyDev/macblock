@@ -113,54 +113,6 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
     )
 
 
-    upstreams_plist = (
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-        "<plist version=\"1.0\">\n"
-        "<dict>\n"
-        "  <key>Label</key>\n"
-        f"  <string>{APP_LABEL}.upstreams</string>\n"
-        "  <key>ProgramArguments</key>\n"
-        "  <array>\n"
-        "    <string>/usr/bin/python3</string>\n"
-        f"    <string>{SYSTEM_BIN_DIR / 'update-upstreams.py'}</string>\n"
-        "  </array>\n"
-        "  <key>StartInterval</key>\n"
-        "  <integer>30</integer>\n"
-        "  <key>StandardOutPath</key>\n"
-        f"  <string>{SYSTEM_LOG_DIR / 'upstreams.out.log'}</string>\n"
-        "  <key>StandardErrorPath</key>\n"
-        f"  <string>{SYSTEM_LOG_DIR / 'upstreams.err.log'}</string>\n"
-        "  <key>RunAtLoad</key>\n"
-        "  <true/>\n"
-        "</dict>\n"
-        "</plist>\n"
-    )
-
-    state_plist = (
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-        "<plist version=\"1.0\">\n"
-        "<dict>\n"
-        "  <key>Label</key>\n"
-        f"  <string>{APP_LABEL}.state</string>\n"
-        "  <key>ProgramArguments</key>\n"
-        "  <array>\n"
-        "    <string>/usr/bin/python3</string>\n"
-        f"    <string>{SYSTEM_BIN_DIR / 'apply-state.py'}</string>\n"
-        "  </array>\n"
-        "  <key>StartInterval</key>\n"
-        "  <integer>30</integer>\n"
-        "  <key>StandardOutPath</key>\n"
-        f"  <string>{SYSTEM_LOG_DIR / 'state.out.log'}</string>\n"
-        "  <key>StandardErrorPath</key>\n"
-        f"  <string>{SYSTEM_LOG_DIR / 'state.err.log'}</string>\n"
-        "  <key>RunAtLoad</key>\n"
-        "  <true/>\n"
-        "</dict>\n"
-        "</plist>\n"
-    )
-
     daemon_plist = _render_template(
         "launchd-macblockd.plist",
         {

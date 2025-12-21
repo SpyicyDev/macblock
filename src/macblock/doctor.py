@@ -93,7 +93,7 @@ def run_diagnostics() -> int:
             print(
                 error(
                     "upstream.conf has no upstream servers; DNS queries will be REFUSED. "
-                    "Run: sudo launchctl kickstart -k system/com.local.macblock.upstreams"
+                    "Run: sudo launchctl kickstart -k system/com.local.macblock.daemon"
                 )
             )
 
