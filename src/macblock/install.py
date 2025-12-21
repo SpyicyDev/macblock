@@ -9,6 +9,7 @@ from macblock.constants import (
     APP_LABEL,
     DNSMASQ_USER,
     LAUNCHD_DIR,
+    LAUNCHD_DAEMON_PLIST,
     LAUNCHD_DNSMASQ_PLIST,
     LAUNCHD_STATE_PLIST,
     LAUNCHD_UPSTREAMS_PLIST,
@@ -92,6 +93,7 @@ def _write_helpers() -> None:
     helpers: list[tuple[str, Path, int]] = [
         ("apply_state.py.tmpl", SYSTEM_BIN_DIR / "apply-state.py", 0o755),
         ("update_upstreams.py.tmpl", SYSTEM_BIN_DIR / "update-upstreams.py", 0o755),
+        ("macblockd.py.tmpl", SYSTEM_BIN_DIR / "macblockd.py", 0o755),
     ]
 
     for src, dst, mode in helpers:
@@ -161,8 +163,19 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
         "</plist>\n"
     )
 
+    daemon_plist = _render_template(
+        "launchd-macblockd.plist",
+        {
+            "APP_LABEL": APP_LABEL,
+            "MACBLOCKD_BIN": str(SYSTEM_BIN_DIR / "macblockd.py"),
+            "MACBLOCKD_STDOUT": str(SYSTEM_LOG_DIR / "daemon.out.log"),
+            "MACBLOCKD_STDERR": str(SYSTEM_LOG_DIR / "daemon.err.log"),
+        },
+    )
+
     for path, content in [
         (LAUNCHD_DNSMASQ_PLIST, dnsmasq_plist),
+        (LAUNCHD_DAEMON_PLIST, daemon_plist),
         (LAUNCHD_UPSTREAMS_PLIST, upstreams_plist),
         (LAUNCHD_STATE_PLIST, state_plist),
     ]:
@@ -186,6 +199,7 @@ def _detect_existing_install() -> list[str]:
         SYSTEM_DNSMASQ_CONF,
         SYSTEM_STATE_FILE,
         LAUNCHD_DNSMASQ_PLIST,
+        LAUNCHD_DAEMON_PLIST,
         LAUNCHD_UPSTREAMS_PLIST,
         LAUNCHD_STATE_PLIST,
         old_pf_plist,
@@ -278,7 +292,7 @@ def do_install(force: bool = False) -> int:
     old_pf_plist = LAUNCHD_DIR / f"{APP_LABEL}.pf.plist"
 
     if force:
-        for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST]:
+        for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST]:
             if plist.exists():
                 try:
                     bootout_system(plist)
@@ -290,6 +304,7 @@ def do_install(force: bool = False) -> int:
     _bootstrap(LAUNCHD_UPSTREAMS_PLIST, f"{APP_LABEL}.upstreams")
     _bootstrap(LAUNCHD_DNSMASQ_PLIST, f"{APP_LABEL}.dnsmasq")
     _bootstrap(LAUNCHD_STATE_PLIST, f"{APP_LABEL}.state")
+    _bootstrap(LAUNCHD_DAEMON_PLIST, f"{APP_LABEL}.daemon")
 
     print_warning("macblock is not enabled by install; run: sudo macblock enable")
     print_success("installed")
@@ -344,7 +359,7 @@ def do_uninstall(force: bool = False) -> int:
 
     old_pf_plist = LAUNCHD_DIR / f"{APP_LABEL}.pf.plist"
 
-    for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST]:
+    for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST]:
         try:
             if plist.exists():
                 bootout_system(plist)
@@ -352,13 +367,14 @@ def do_uninstall(force: bool = False) -> int:
             if not force:
                 raise
 
-    for p in [LAUNCHD_DNSMASQ_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_STATE_PLIST, old_pf_plist]:
+    for p in [LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_STATE_PLIST, old_pf_plist]:
         if p.exists():
             p.unlink()
 
     for p in [
         SYSTEM_BIN_DIR / "apply-state.py",
         SYSTEM_BIN_DIR / "update-upstreams.py",
+        SYSTEM_BIN_DIR / "macblockd.py",
     ]:
         if p.exists():
             p.unlink()
@@ -411,7 +427,13 @@ def do_uninstall(force: bool = False) -> int:
 
     leftovers: list[str] = []
 
-    for label in [f"{APP_LABEL}.dnsmasq", f"{APP_LABEL}.upstreams", f"{APP_LABEL}.state", f"{APP_LABEL}.pf"]:
+    for label in [
+        f"{APP_LABEL}.dnsmasq",
+        f"{APP_LABEL}.daemon",
+        f"{APP_LABEL}.upstreams",
+        f"{APP_LABEL}.state",
+        f"{APP_LABEL}.pf",
+    ]:
         if service_exists(label):
             leftovers.append(f"launchd {label}")
 
