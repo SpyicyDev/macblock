@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -40,10 +41,18 @@ def main() -> int:
 
     r1 = run([pfctl, "-E"])
     if r1.returncode not in (0, 1):
-        return 0
+        sys.stderr.write(r1.stderr)
+        return r1.returncode
 
-    run([pfctl, "-f", "/etc/pf.conf"])
-    run([pfctl, "-a", anchor_name, "-f", anchor_file])
+    r2 = run([pfctl, "-f", "/etc/pf.conf"])
+    if r2.returncode != 0:
+        sys.stderr.write(r2.stderr)
+        return r2.returncode
+
+    r3 = run([pfctl, "-a", anchor_name, "-N", "-f", anchor_file])
+    if r3.returncode != 0:
+        sys.stderr.write(r3.stderr)
+        return r3.returncode
 
     data["resume_at_epoch"] = None
 

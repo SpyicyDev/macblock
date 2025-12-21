@@ -267,7 +267,7 @@ def enable_anchor() -> None:
         if not _main_ruleset_has_rdr_anchor():
             _pfctl(["-f", str(PF_CONF)])
 
-        _pfctl(["-a", APP_LABEL, "-f", str(PF_ANCHOR_FILE)])
+        _pfctl(["-a", APP_LABEL, "-N", "-f", str(PF_ANCHOR_FILE)])
 
 
 def disable_anchor() -> None:
