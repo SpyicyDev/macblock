@@ -13,6 +13,7 @@ _LOCALHOST_DNS_V4 = ["127.0.0.1"]
 class ServiceDnsBackup:
     dns_servers: list[str] | None
     search_domains: list[str] | None
+    dhcp_dns_servers: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -152,7 +153,13 @@ def compute_managed_services(*, exclude: set[str] | None = None) -> list[Service
 
 
 def snapshot_service_backup(service: str) -> ServiceDnsBackup:
-    return ServiceDnsBackup(dns_servers=get_dns_servers(service), search_domains=get_search_domains(service))
+    info = get_service_info(service)
+    dhcp = read_dhcp_nameservers(info.device or "")
+    return ServiceDnsBackup(
+        dns_servers=get_dns_servers(service),
+        search_domains=get_search_domains(service),
+        dhcp_dns_servers=dhcp or None,
+    )
 
 
 def apply_localhost_dns(service: str) -> bool:

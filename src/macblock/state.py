@@ -67,9 +67,11 @@ def load_state(path: Path) -> State:
                 continue
             dns_val = cfg.get("dns")
             search_val = cfg.get("search")
+            dhcp_val = cfg.get("dhcp")
             dns_backup[service] = {
                 "dns": list(dns_val) if isinstance(dns_val, list) else None,
                 "search": list(search_val) if isinstance(search_val, list) else None,
+                "dhcp": list(dhcp_val) if isinstance(dhcp_val, list) else None,
             }
 
     managed_services_raw = data.get("managed_services")

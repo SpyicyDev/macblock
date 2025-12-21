@@ -225,15 +225,25 @@ def main() -> int:
             if not isinstance(cfg, dict):
                 continue
             servers = cfg.get("dns")
-            if not isinstance(servers, list):
+            if isinstance(servers, list):
+                for ip in servers:
+                    if not isinstance(ip, str) or not ip:
+                        continue
+                    if ip == "127.0.0.1":
+                        continue
+                    if ip not in defaults:
+                        defaults.append(ip)
                 continue
-            for ip in servers:
-                if not isinstance(ip, str) or not ip:
-                    continue
-                if ip == "127.0.0.1":
-                    continue
-                if ip not in defaults:
-                    defaults.append(ip)
+
+            dhcp_servers = cfg.get("dhcp")
+            if isinstance(dhcp_servers, list):
+                for ip in dhcp_servers:
+                    if not isinstance(ip, str) or not ip:
+                        continue
+                    if ip == "127.0.0.1":
+                        continue
+                    if ip not in defaults:
+                        defaults.append(ip)
 
     r = run(["/usr/sbin/scutil", "--dns"])
     if r.returncode != 0:

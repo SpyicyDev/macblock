@@ -69,15 +69,17 @@ def _read_excluded_services() -> set[str]:
 
 
 def _to_backup_dict(backup: ServiceDnsBackup) -> dict[str, list[str] | None]:
-    return {"dns": backup.dns_servers, "search": backup.search_domains}
+    return {"dns": backup.dns_servers, "search": backup.search_domains, "dhcp": backup.dhcp_dns_servers}
 
 
 def _from_backup_dict(data: dict[str, object]) -> ServiceDnsBackup:
     dns_val = data.get("dns")
     search_val = data.get("search")
+    dhcp_val = data.get("dhcp")
     dns = list(dns_val) if isinstance(dns_val, list) else None
     search = list(search_val) if isinstance(search_val, list) else None
-    return ServiceDnsBackup(dns_servers=dns, search_domains=search)
+    dhcp = list(dhcp_val) if isinstance(dhcp_val, list) else None
+    return ServiceDnsBackup(dns_servers=dns, search_domains=search, dhcp_dns_servers=dhcp)
 
 
 def _restore_dns(st) -> None:
