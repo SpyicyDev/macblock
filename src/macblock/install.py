@@ -247,8 +247,9 @@ def do_install(force: bool = False) -> int:
 
     info("installing launchd jobs")
 
-    _bootstrap(LAUNCHD_DNSMASQ_PLIST, f"{APP_LABEL}.dnsmasq")
     _bootstrap(LAUNCHD_UPSTREAMS_PLIST, f"{APP_LABEL}.upstreams")
+    _bootstrap(LAUNCHD_DNSMASQ_PLIST, f"{APP_LABEL}.dnsmasq")
+    _bootstrap(LAUNCHD_PF_PLIST, f"{APP_LABEL}.pf")
 
     warning("PF is not enabled by install; run: sudo macblock enable")
     success("installed")

@@ -6,6 +6,7 @@ from macblock.constants import (
     DNSMASQ_LISTEN_PORT,
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_DNSMASQ_CONF,
+    VAR_DB_DIR,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )
@@ -23,8 +24,9 @@ def render_dnsmasq_conf() -> str:
         "domain-needed",
         "bogus-priv",
         "cache-size=10000",
+        f"log-facility={VAR_DB_DIR / 'dnsmasq.log'}",
         f"pid-file={VAR_DB_DNSMASQ_PID}",
-        f"conf-file={VAR_DB_UPSTREAM_CONF}",
+        f"servers-file={VAR_DB_UPSTREAM_CONF}",
         f"conf-file={SYSTEM_BLOCKLIST_FILE}",
     ]
     return "\n".join(lines) + "\n"
