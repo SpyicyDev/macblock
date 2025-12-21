@@ -21,6 +21,10 @@ def bootout_system(plist: Path) -> None:
     _launchctl(["bootout", "system", str(plist)])
 
 
+def bootout_label(label: str) -> None:
+    _launchctl(["bootout", f"system/{label}"])
+
+
 def enable_service(label: str) -> None:
     _launchctl(["enable", f"system/{label}"])
 

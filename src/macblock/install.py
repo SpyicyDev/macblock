@@ -34,7 +34,7 @@ from macblock.dnsmasq import render_dnsmasq_conf
 from macblock.errors import MacblockError
 from macblock.exec import run
 from macblock.fs import atomic_write_text, ensure_dir
-from macblock.launchd import bootout_system, bootstrap_system, enable_service, kickstart, service_exists
+from macblock.launchd import bootout_label, bootout_system, bootstrap_system, enable_service, kickstart, service_exists
 from macblock.state import State, load_state, save_state_atomic
 from macblock.system_dns import ServiceDnsBackup, restore_from_backup
 from macblock.templates import read_template
@@ -240,6 +240,12 @@ def do_install(force: bool = False) -> int:
     old_pf_plist = LAUNCHD_DIR / f"{APP_LABEL}.pf.plist"
 
     if force:
+        for label in [f"{APP_LABEL}.state", f"{APP_LABEL}.upstreams"]:
+            try:
+                bootout_label(label)
+            except Exception:
+                pass
+
         for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST]:
             if plist.exists():
                 try:
@@ -257,17 +263,25 @@ def do_install(force: bool = False) -> int:
     return 0
 
 
-def _remove_managed_resolvers(domains: list[str]) -> None:
-    for dom in domains:
-        p = SYSTEM_RESOLVER_DIR / dom
-        if not p.exists():
+def _remove_any_macblock_resolvers() -> None:
+    if not SYSTEM_RESOLVER_DIR.exists():
+        return
+
+    for p in SYSTEM_RESOLVER_DIR.iterdir():
+        try:
+            if not p.is_file():
+                continue
+        except Exception:
             continue
+
         try:
             head = p.read_text(encoding="utf-8", errors="ignore")[:64]
         except Exception:
             continue
+
         if not head.startswith("# macblock"):
             continue
+
         try:
             p.unlink()
         except Exception:
@@ -298,7 +312,7 @@ def do_uninstall(force: bool = False) -> int:
             raise
 
     try:
-        _remove_managed_resolvers(st.resolver_domains)
+        _remove_any_macblock_resolvers()
     except Exception:
         if not force:
             raise
