@@ -11,6 +11,7 @@ from macblock.constants import (
     PF_ANCHOR_FILE,
     SYSTEM_DNSMASQ_CONF,
     SYSTEM_STATE_FILE,
+    VAR_DB_DNSMASQ_PID,
 )
 from macblock.exec import run
 from macblock.platform import is_root
@@ -28,8 +29,10 @@ def show_status() -> int:
     print(bold("macblock status"))
 
     print(f"label: {APP_LABEL}")
+    print(f"enabled: {success('true') if st.enabled else dim('false')}")
     print(f"pf_anchor: {_exists(str(PF_ANCHOR_FILE), PF_ANCHOR_FILE.exists())}")
     print(f"dnsmasq_conf: {_exists(str(SYSTEM_DNSMASQ_CONF), SYSTEM_DNSMASQ_CONF.exists())}")
+    print(f"dnsmasq_pid: {_exists(str(VAR_DB_DNSMASQ_PID), VAR_DB_DNSMASQ_PID.exists())}")
 
     plists = [
         (f"{APP_LABEL}.dnsmasq", LAUNCHD_DNSMASQ_PLIST),
@@ -61,7 +64,10 @@ def show_status() -> int:
     r = run(["/usr/bin/pgrep", "-x", "dnsmasq"])
     if r.returncode == 0:
         print()
-        print("dnsmasq: " + success("running"))
+        if VAR_DB_DNSMASQ_PID.exists():
+            print("dnsmasq: " + success("running"))
+        else:
+            print("dnsmasq: " + warning("some dnsmasq is running (macblock pid-file missing)"))
     else:
         print()
         print("dnsmasq: " + warning("not running or not visible"))

@@ -19,6 +19,7 @@ from macblock.constants import (
     SYSTEM_DNSMASQ_CONF,
     SYSTEM_RAW_BLOCKLIST_FILE,
     SYSTEM_STATE_FILE,
+    VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )
 from macblock.exec import run
@@ -31,15 +32,18 @@ def _check_file(path) -> tuple[bool, str]:
     return ok, str(path)
 
 
-def _can_bind(host: str, port: int, *, family: int, socktype: int) -> bool:
-    s = socket.socket(family, socktype)
+def _tcp_connect_ok(host: str, port: int, *, family: int) -> bool:
     try:
-        s.bind((host, port))
-        if socktype == socket.SOCK_STREAM:
-            s.listen(1)
+        s = socket.socket(family, socket.SOCK_STREAM)
+    except OSError:
+        return False
+
+    try:
+        s.settimeout(0.3)
+        s.connect((host, port))
         return True
     except OSError as e:
-        if e.errno in {errno.EADDRINUSE, errno.EACCES}:
+        if e.errno in {errno.ECONNREFUSED, errno.ETIMEDOUT, errno.EHOSTUNREACH, errno.ENETUNREACH}:
             return False
         return False
     finally:
@@ -72,19 +76,36 @@ def run_diagnostics() -> int:
         ok_all = ok_all and ok
         print(f"{name}: " + (success(p) if ok else error(p)))
 
-    ok_v4_udp = _can_bind(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT, family=socket.AF_INET, socktype=socket.SOCK_DGRAM)
-    ok_v4_tcp = _can_bind(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT, family=socket.AF_INET, socktype=socket.SOCK_STREAM)
-    ok_v6_udp = _can_bind(DNSMASQ_LISTEN_ADDR_V6, DNSMASQ_LISTEN_PORT, family=socket.AF_INET6, socktype=socket.SOCK_DGRAM)
-    ok_v6_tcp = _can_bind(DNSMASQ_LISTEN_ADDR_V6, DNSMASQ_LISTEN_PORT, family=socket.AF_INET6, socktype=socket.SOCK_STREAM)
+    pid_ok = False
+    pid = None
+    if VAR_DB_DNSMASQ_PID.exists():
+        try:
+            pid = int(VAR_DB_DNSMASQ_PID.read_text(encoding="utf-8").strip())
+        except Exception:
+            pid = None
 
-    if not (ok_v4_udp and ok_v4_tcp and ok_v6_udp and ok_v6_tcp):
+    if pid is not None and pid > 1:
+        r_ps = run(["/bin/ps", "-p", str(pid)])
+        pid_ok = r_ps.returncode == 0
+
+    if pid is None:
+        print(warning(f"dnsmasq pid-file missing: {VAR_DB_DNSMASQ_PID}"))
+    elif not pid_ok:
         ok_all = False
-        print(
-            error(
-                "dnsmasq listen port appears unavailable: "
-                + f"{DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT} and {DNSMASQ_LISTEN_ADDR_V6}:{DNSMASQ_LISTEN_PORT}"
-            )
-        )
+        print(error(f"dnsmasq pid not running: {pid}"))
+    else:
+        print(info("dnsmasq pid: ") + success(str(pid)))
+        r_cmd = run(["/bin/ps", "-p", str(pid), "-o", "command="])
+        cmd = r_cmd.stdout.strip() if r_cmd.returncode == 0 else ""
+        if cmd and str(SYSTEM_DNSMASQ_CONF) not in cmd:
+            print(warning("dnsmasq process does not appear to be macblock-managed"))
+
+    ok_v4_tcp = _tcp_connect_ok(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT, family=socket.AF_INET)
+    ok_v6_tcp = _tcp_connect_ok(DNSMASQ_LISTEN_ADDR_V6, DNSMASQ_LISTEN_PORT, family=socket.AF_INET6)
+
+    if pid_ok and not (ok_v4_tcp or ok_v6_tcp):
+        ok_all = False
+        print(error(f"dnsmasq not listening on {DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT} or {DNSMASQ_LISTEN_ADDR_V6}:{DNSMASQ_LISTEN_PORT}"))
 
     r_if = run(["/sbin/ifconfig", "-l"])
     ifaces = r_if.stdout.strip().split() if r_if.returncode == 0 else []
@@ -120,7 +141,10 @@ def run_diagnostics() -> int:
 
     r = run(["/usr/bin/pgrep", "-x", "dnsmasq"])
     if r.returncode == 0:
-        print(info("dnsmasq: ") + success("running"))
+        if pid is None:
+            print(info("dnsmasq: ") + warning("some dnsmasq is running (pid-file missing)"))
+        else:
+            print(info("dnsmasq: ") + success("running"))
     else:
         print(info("dnsmasq: ") + warning("not running or not visible"))
 
