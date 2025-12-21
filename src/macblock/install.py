@@ -106,6 +106,8 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
             "DNSMASQ_BIN": dnsmasq_bin,
             "DNSMASQ_CONF": str(SYSTEM_DNSMASQ_CONF),
             "DNSMASQ_USER": DNSMASQ_USER,
+            "DNSMASQ_STDOUT": str(VAR_DB_DIR / "dnsmasq.out.log"),
+            "DNSMASQ_STDERR": str(VAR_DB_DIR / "dnsmasq.err.log"),
         },
     )
 
@@ -127,6 +129,10 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
         f"  <string>{DNSMASQ_USER}</string>\n"
         "  <key>GroupName</key>\n"
         f"  <string>{DNSMASQ_USER}</string>\n"
+        "  <key>StandardOutPath</key>\n"
+        f"  <string>{VAR_DB_DIR / 'upstreams.out.log'}</string>\n"
+        "  <key>StandardErrorPath</key>\n"
+        f"  <string>{VAR_DB_DIR / 'upstreams.err.log'}</string>\n"
         "  <key>RunAtLoad</key>\n"
         "  <true/>\n"
         "</dict>\n"
@@ -147,6 +153,10 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
         "  </array>\n"
         "  <key>StartInterval</key>\n"
         "  <integer>30</integer>\n"
+        "  <key>StandardOutPath</key>\n"
+        f"  <string>{VAR_DB_DIR / 'pf.out.log'}</string>\n"
+        "  <key>StandardErrorPath</key>\n"
+        f"  <string>{VAR_DB_DIR / 'pf.err.log'}</string>\n"
         "  <key>RunAtLoad</key>\n"
         "  <true/>\n"
         "</dict>\n"

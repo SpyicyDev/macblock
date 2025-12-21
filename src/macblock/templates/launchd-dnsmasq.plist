@@ -15,6 +15,10 @@
   <string>{{DNSMASQ_USER}}</string>
   <key>GroupName</key>
   <string>{{DNSMASQ_USER}}</string>
+  <key>StandardOutPath</key>
+  <string>{{DNSMASQ_STDOUT}}</string>
+  <key>StandardErrorPath</key>
+  <string>{{DNSMASQ_STDERR}}</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>

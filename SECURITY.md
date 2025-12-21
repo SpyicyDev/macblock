@@ -11,7 +11,7 @@ This project intercepts DNS on the local machine and makes privileged changes (P
 ## Design constraints
 
 - Root-owned jobs must not execute user-writable scripts or binaries.
-- `dnsmasq` is run on a non-privileged loopback port (`5353`) and can run as an unprivileged dedicated user.
+- `dnsmasq` is run on a non-privileged loopback port (`5300`) and can run as an unprivileged dedicated user.
 - PF is the interception mechanism; system DNS servers are not rewritten.
 
 ## Privileged footprint

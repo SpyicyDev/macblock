@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import errno
+import socket
+
 from macblock.colors import bold, error, info, success, warning
 from macblock.constants import (
     APP_LABEL,
+    DNSMASQ_LISTEN_ADDR,
+    DNSMASQ_LISTEN_ADDR_V6,
+    DNSMASQ_LISTEN_PORT,
     LAUNCHD_DNSMASQ_PLIST,
     LAUNCHD_PF_PLIST,
     LAUNCHD_UPSTREAMS_PLIST,
@@ -23,6 +29,24 @@ from macblock.pf import validate_pf_conf
 def _check_file(path) -> tuple[bool, str]:
     ok = path.exists()
     return ok, str(path)
+
+
+def _can_bind(host: str, port: int, *, family: int, socktype: int) -> bool:
+    s = socket.socket(family, socktype)
+    try:
+        s.bind((host, port))
+        if socktype == socket.SOCK_STREAM:
+            s.listen(1)
+        return True
+    except OSError as e:
+        if e.errno in {errno.EADDRINUSE, errno.EACCES}:
+            return False
+        return False
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
 
 
 def run_diagnostics() -> int:
@@ -47,6 +71,20 @@ def run_diagnostics() -> int:
         ok, p = _check_file(path)
         ok_all = ok_all and ok
         print(f"{name}: " + (success(p) if ok else error(p)))
+
+    ok_v4_udp = _can_bind(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT, family=socket.AF_INET, socktype=socket.SOCK_DGRAM)
+    ok_v4_tcp = _can_bind(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT, family=socket.AF_INET, socktype=socket.SOCK_STREAM)
+    ok_v6_udp = _can_bind(DNSMASQ_LISTEN_ADDR_V6, DNSMASQ_LISTEN_PORT, family=socket.AF_INET6, socktype=socket.SOCK_DGRAM)
+    ok_v6_tcp = _can_bind(DNSMASQ_LISTEN_ADDR_V6, DNSMASQ_LISTEN_PORT, family=socket.AF_INET6, socktype=socket.SOCK_STREAM)
+
+    if not (ok_v4_udp and ok_v4_tcp and ok_v6_udp and ok_v6_tcp):
+        ok_all = False
+        print(
+            error(
+                "dnsmasq listen port appears unavailable: "
+                + f"{DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT} and {DNSMASQ_LISTEN_ADDR_V6}:{DNSMASQ_LISTEN_PORT}"
+            )
+        )
 
     r_if = run(["/sbin/ifconfig", "-l"])
     ifaces = r_if.stdout.strip().split() if r_if.returncode == 0 else []

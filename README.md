@@ -1,6 +1,6 @@
 # macblock
 
-Local DNS sinkhole for macOS using `dnsmasq` (on `127.0.0.1:5353`) plus PF redirection of outbound DNS (`:53`) to the local resolver.
+Local DNS sinkhole for macOS using `dnsmasq` (on `127.0.0.1:5300`) plus PF redirection of outbound DNS (`:53`) to the local resolver.
 
 This project intentionally does **not** set system DNS servers to `127.0.0.1`. It follows system resolver selection (including split DNS from VPNs) by periodically translating macOS resolver state into `dnsmasq` `server=` rules.
 
