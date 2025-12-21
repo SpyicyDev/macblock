@@ -19,7 +19,17 @@ def test_domain(domain: str) -> int:
     print(info("query"))
     print(f"domain: {bold(domain)}")
 
-    r = run([dig, f"@{DNSMASQ_LISTEN_ADDR}", "-p", str(DNSMASQ_LISTEN_PORT), domain])
+    r = run(
+        [
+            dig,
+            f"@{DNSMASQ_LISTEN_ADDR}",
+            "-p",
+            str(DNSMASQ_LISTEN_PORT),
+            domain,
+            "+time=2",
+            "+tries=1",
+        ]
+    )
     if r.returncode != 0:
         print(error(r.stderr.strip() or "dig failed"))
         return 1
