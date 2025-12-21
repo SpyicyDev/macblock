@@ -90,7 +90,12 @@ def run_diagnostics() -> int:
             upstream_text = ""
         if "server=" not in upstream_text:
             ok_all = False
-            print(error("upstream.conf has no upstream servers; restart macblock upstreams job"))
+            print(
+                error(
+                    "upstream.conf has no upstream servers; DNS queries will be REFUSED. "
+                    "Run: sudo launchctl kickstart -k system/com.local.macblock.upstreams"
+                )
+            )
 
     pid_ok = False
     pid = None

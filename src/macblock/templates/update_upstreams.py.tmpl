@@ -124,6 +124,11 @@ def parse_scutil_dns(text: str) -> tuple[list[str], dict[str, list[str]]]:
 
 
 def render_upstream_conf(defaults: list[str], per_domain: dict[str, list[str]]) -> str:
+    # dnsmasq returns REFUSED for recursive queries if no upstreams exist.
+    # Ensure we always have at least one default upstream.
+    if not defaults:
+        defaults = ["1.1.1.1", "8.8.8.8"]
+
     lines: list[str] = []
     for ip in defaults:
         lines.append(f"server={ip}")
