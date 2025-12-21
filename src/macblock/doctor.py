@@ -24,7 +24,7 @@ from macblock.constants import (
 )
 from macblock.exec import run
 from macblock.platform import is_root
-from macblock.pf import validate_pf_conf
+from macblock.pf import anchor_nat, validate_pf_conf
 
 
 def _check_file(path) -> tuple[bool, str]:
@@ -145,6 +145,11 @@ def run_diagnostics() -> int:
         except Exception as e:
             ok_all = False
             print(info("pf.conf syntax: ") + error(str(e)))
+
+        nat = anchor_nat(verbose=True)
+        print()
+        print(info("pf anchor nat/rdr"))
+        print(nat if nat else "(none)")
     else:
         print(warning("Run 'sudo macblock doctor' to validate PF config"))
 

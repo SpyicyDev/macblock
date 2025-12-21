@@ -4,7 +4,7 @@ import os
 import pwd
 from pathlib import Path
 
-from macblock.colors import info, success, warning
+from macblock.colors import print_info, print_success, print_warning
 from macblock.constants import (
     APP_LABEL,
     DNSMASQ_USER,
@@ -178,7 +178,41 @@ def _bootstrap(plist: Path, label: str) -> None:
     kickstart(label)
 
 
+def _detect_existing_install() -> list[str]:
+    leftovers: list[str] = []
+
+    for p in [
+        SYSTEM_SUPPORT_DIR,
+        SYSTEM_DNSMASQ_CONF,
+        SYSTEM_STATE_FILE,
+        PF_ANCHOR_FILE,
+        LAUNCHD_DNSMASQ_PLIST,
+        LAUNCHD_UPSTREAMS_PLIST,
+        LAUNCHD_PF_PLIST,
+    ]:
+        if p.exists():
+            leftovers.append(str(p))
+
+    if PF_CONF.exists():
+        try:
+            text = PF_CONF.read_text(encoding="utf-8")
+        except Exception:
+            text = ""
+        if "# macblock begin" in text or "# macblock end" in text:
+            leftovers.append(str(PF_CONF))
+
+    return leftovers
+
+
 def do_install(force: bool = False) -> int:
+    existing = _detect_existing_install()
+    if existing:
+        msg = "existing macblock installation detected: " + ", ".join(existing)
+        if force:
+            print_warning(msg)
+        else:
+            raise MacblockError(msg + ". Run: sudo macblock uninstall (or pass --force).")
+
     _require_system_python3()
     dnsmasq_bin = _find_dnsmasq_bin()
 
@@ -245,14 +279,14 @@ def do_install(force: bool = False) -> int:
             except Exception:
                 pass
 
-    info("installing launchd jobs")
+    print_info("installing launchd jobs")
 
     _bootstrap(LAUNCHD_UPSTREAMS_PLIST, f"{APP_LABEL}.upstreams")
     _bootstrap(LAUNCHD_DNSMASQ_PLIST, f"{APP_LABEL}.dnsmasq")
     _bootstrap(LAUNCHD_PF_PLIST, f"{APP_LABEL}.pf")
 
-    warning("PF is not enabled by install; run: sudo macblock enable")
-    success("installed")
+    print_warning("PF is not enabled by install; run: sudo macblock enable")
+    print_success("installed")
     return 0
 
 
@@ -343,9 +377,9 @@ def do_uninstall(force: bool = False) -> int:
     if leftovers:
         msg = "uninstall incomplete: " + ", ".join(leftovers)
         if force:
-            warning(msg)
+            print_warning(msg)
         else:
             raise MacblockError(msg)
 
-    success("uninstalled")
+    print_success("uninstalled")
     return 0

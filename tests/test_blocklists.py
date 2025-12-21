@@ -32,8 +32,8 @@ class TestBlocklists(unittest.TestCase):
             count = compile_blocklist(raw, allow, deny, out)
             self.assertEqual(count, 2)
             text = out.read_text(encoding="utf-8")
-            self.assertIn("address=/tracker.example/\n", text)
-            self.assertIn("address=/extra.example/\n", text)
+            self.assertIn("server=/tracker.example/\n", text)
+            self.assertIn("server=/extra.example/\n", text)
             self.assertNotIn("ads.example", text)
 
 

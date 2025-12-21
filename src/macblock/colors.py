@@ -44,3 +44,19 @@ def bold(text: str) -> str:
 
 def dim(text: str) -> str:
     return color(text, Colors.DIM)
+
+
+def print_success(text: str) -> None:
+    print(success(text))
+
+
+def print_warning(text: str) -> None:
+    print(warning(text))
+
+
+def print_info(text: str) -> None:
+    print(info(text))
+
+
+def print_error(text: str) -> None:
+    print(error(text), file=sys.stderr)

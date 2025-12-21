@@ -33,6 +33,12 @@ sudo macblock update
 sudo macblock enable
 ```
 
+## Important notes
+
+- Do not run `sudo brew`. Homebrew expects to manage files as your user.
+- `sudo macblock ...` installs and manages system integration under `/Library`, `/etc`, and `/var/db`. Homebrew uninstall does not remove those.
+- If Homebrew fails with a message like "Could not remove ... .reinstall", that directory is usually root-owned due to a previous root run. Fix it by following Homebrew's printed path (either `sudo rm -rf <path>` or `sudo chown -R $(whoami):admin <path>`).
+
 ## Commands
 
 - `macblock status`
@@ -48,15 +54,19 @@ sudo macblock enable
 
 ## Uninstall
 
+Remove system integration first:
+
 ```bash
 sudo macblock uninstall
 ```
 
-If you installed via Homebrew:
+Then remove the Homebrew package:
 
 ```bash
 brew uninstall macblock dnsmasq
 ```
+
+If you run `brew uninstall` first, `macblock` may no longer be available to remove the system integration components.
 
 ## Notes
 

@@ -15,7 +15,7 @@ from macblock.constants import (
 )
 from macblock.exec import run
 from macblock.platform import is_root
-from macblock.pf import anchor_rules, pf_info
+from macblock.pf import anchor_nat, anchor_rules, main_has_rdr_anchor, pf_info
 from macblock.state import load_state
 
 
@@ -53,8 +53,13 @@ def show_status() -> int:
         print()
         print(info("pf"))
         print(pf_info())
+        print(f"main rdr-anchor: {success('present') if main_has_rdr_anchor() else warning('missing')}")
         print()
-        print(info("pf anchor rules"))
+        print(info("pf anchor nat/rdr"))
+        nat = anchor_nat(verbose=True)
+        print(nat if nat else dim("(none)"))
+        print()
+        print(info("pf anchor filter"))
         rules = anchor_rules()
         print(rules if rules else dim("(none)"))
     else:

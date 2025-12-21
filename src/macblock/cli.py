@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import sys
 
+sys.dont_write_bytecode = True
+
 from macblock import __version__
 from macblock.errors import MacblockError, PrivilegeError, UnsupportedPlatformError
 from macblock.install import do_install, do_uninstall
-from macblock.blocklists import update_blocklist
+from macblock.blocklists import list_blocklist_sources, set_blocklist_source, update_blocklist
 from macblock.control import do_disable, do_enable, do_pause, do_resume
 from macblock.doctor import run_diagnostics
 from macblock.dns_test import test_domain
@@ -52,6 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_update.add_argument("--source", default=None)
     p_update.add_argument("--sha256", default=None)
 
+    p_sources = sub.add_parser("sources", help="Manage blocklist sources")
+    sources_sub = p_sources.add_subparsers(dest="sources_cmd", required=True)
+    sources_sub.add_parser("list")
+    sources_set = sources_sub.add_parser("set")
+    sources_set.add_argument("source")
+
     p_allow = sub.add_parser("allow", help="Manage whitelist (root)")
     allow_sub = p_allow.add_subparsers(dest="allow_cmd", required=True)
     allow_add = allow_sub.add_parser("add")
@@ -75,6 +83,10 @@ def _require_root(cmd: str, args: argparse.Namespace) -> None:
     if cmd in {"install", "uninstall", "enable", "disable", "pause", "resume", "update", "allow", "deny"}:
         if not is_root():
             raise PrivilegeError(f"Command '{cmd}' requires root (try: sudo macblock {cmd} ...)")
+
+    if cmd == "sources" and getattr(args, "sources_cmd", None) == "set":
+        if not is_root():
+            raise PrivilegeError("Command 'sources set' requires root (try: sudo macblock sources set ...)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -106,6 +118,10 @@ def main(argv: list[str] | None = None) -> int:
             return test_domain(args.domain)
         if args.cmd == "update":
             return update_blocklist(source=args.source, sha256=args.sha256)
+        if args.cmd == "sources":
+            if args.sources_cmd == "list":
+                return list_blocklist_sources()
+            return set_blocklist_source(args.source)
         if args.cmd == "allow":
             if args.allow_cmd == "add":
                 return add_whitelist(args.domain)

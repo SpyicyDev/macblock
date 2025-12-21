@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from macblock.blocklists import compile_blocklist, normalize_domain, reload_dnsmasq
-from macblock.colors import success
+from macblock.colors import print_success
 from macblock.constants import (
     SYSTEM_BLACKLIST_FILE,
     SYSTEM_BLOCKLIST_FILE,
@@ -45,7 +45,7 @@ def add_whitelist(domain: str) -> int:
     values.add(d)
     _write_set(SYSTEM_WHITELIST_FILE, values)
     _recompile()
-    success(f"allowed: {d}")
+    print_success(f"allowed: {d}")
     return 0
 
 
@@ -55,7 +55,7 @@ def remove_whitelist(domain: str) -> int:
     values.discard(d)
     _write_set(SYSTEM_WHITELIST_FILE, values)
     _recompile()
-    success(f"removed: {d}")
+    print_success(f"removed: {d}")
     return 0
 
 
@@ -72,7 +72,7 @@ def add_blacklist(domain: str) -> int:
     values.add(d)
     _write_set(SYSTEM_BLACKLIST_FILE, values)
     _recompile()
-    success(f"denied: {d}")
+    print_success(f"denied: {d}")
     return 0
 
 
@@ -82,7 +82,7 @@ def remove_blacklist(domain: str) -> int:
     values.discard(d)
     _write_set(SYSTEM_BLACKLIST_FILE, values)
     _recompile()
-    success(f"removed: {d}")
+    print_success(f"removed: {d}")
     return 0
 
 

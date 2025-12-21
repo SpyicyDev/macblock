@@ -5,7 +5,7 @@ import re
 import urllib.request
 from pathlib import Path
 
-from macblock.colors import info, success
+from macblock.colors import print_info, print_success, print_warning
 from macblock.constants import (
     APP_LABEL,
     DEFAULT_BLOCKLIST_SOURCE,
@@ -82,7 +82,7 @@ def compile_blocklist(raw_path: Path, whitelist_path: Path, blacklist_path: Path
 
     final = (base - allow) | deny
 
-    lines = [f"address=/{d}/" for d in sorted(final)]
+    lines = [f"server=/{d}/" for d in sorted(final)]
     atomic_write_text(out_path, "\n".join(lines) + ("\n" if lines else ""), mode=0o644)
 
     return len(final)
@@ -136,6 +136,36 @@ def reload_dnsmasq() -> None:
             run(["/bin/kill", "-HUP", str(pid)])
 
 
+def list_blocklist_sources() -> int:
+    st = load_state(SYSTEM_STATE_FILE)
+    current = st.blocklist_source or DEFAULT_BLOCKLIST_SOURCE
+
+    for key in sorted(BLOCKLIST_SOURCES.keys()):
+        marker = "*" if key == current else " "
+        print(f"{marker} {key} - {BLOCKLIST_SOURCES[key]['name']}")
+
+    return 0
+
+
+def set_blocklist_source(source: str) -> int:
+    src = source.strip()
+
+    if not src:
+        raise MacblockError("source is required")
+
+    if not (src.startswith("https://") or src in BLOCKLIST_SOURCES):
+        raise MacblockError("unknown source")
+
+    st = load_state(SYSTEM_STATE_FILE)
+    save_state_atomic(
+        SYSTEM_STATE_FILE,
+        State(schema_version=st.schema_version, enabled=st.enabled, resume_at_epoch=st.resume_at_epoch, blocklist_source=src),
+    )
+
+    print_success(f"blocklist source set: {src}")
+    return 0
+
+
 def update_blocklist(source: str | None = None, sha256: str | None = None) -> int:
     st = load_state(SYSTEM_STATE_FILE)
     chosen = source or st.blocklist_source or DEFAULT_BLOCKLIST_SOURCE
@@ -147,8 +177,19 @@ def update_blocklist(source: str | None = None, sha256: str | None = None) -> in
     else:
         raise MacblockError("unknown source")
 
-    info("downloading")
+    print_info(f"downloading: {url}")
     raw = _download(url, expected_sha256=sha256)
+
+    if not raw.strip():
+        raise MacblockError("downloaded blocklist is empty")
+
+    head = raw.lstrip()[:200].lower()
+    if head.startswith("<!doctype html") or head.startswith("<html") or "<html" in head:
+        raise MacblockError("downloaded blocklist looks like HTML")
+
+    count_raw = len(_parse_hosts_domains(raw))
+    if count_raw < 1000:
+        print_warning(f"downloaded blocklist looks small ({count_raw} domains)")
 
     atomic_write_text(SYSTEM_RAW_BLOCKLIST_FILE, raw, mode=0o644)
 
@@ -161,5 +202,5 @@ def update_blocklist(source: str | None = None, sha256: str | None = None) -> in
 
     reload_dnsmasq()
 
-    success(f"blocklist entries: {count}")
+    print_success(f"blocklist entries: {count}")
     return 0

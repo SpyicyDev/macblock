@@ -207,6 +207,10 @@ def _main_ruleset_has_rdr_anchor() -> bool:
     return f"rdr-anchor \"{APP_LABEL}\"" in r.stdout
 
 
+def main_has_rdr_anchor() -> bool:
+    return _main_ruleset_has_rdr_anchor()
+
+
 def enable_anchor() -> None:
     with _pf_lock():
         _ensure_pf_conf_block_locked()
@@ -230,6 +234,16 @@ def disable_anchor() -> None:
 
 def pf_info() -> str:
     r = run(["/sbin/pfctl", "-s", "info"])
+    if r.returncode != 0:
+        return r.stderr.strip() or "pfctl failed"
+    return r.stdout.strip()
+
+
+def anchor_nat(verbose: bool = False) -> str:
+    args = ["/sbin/pfctl", "-a", APP_LABEL, "-sn"]
+    if verbose:
+        args.append("-v")
+    r = run(args)
     if r.returncode != 0:
         return r.stderr.strip() or "pfctl failed"
     return r.stdout.strip()

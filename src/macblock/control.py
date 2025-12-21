@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from macblock.colors import success
+from macblock.colors import print_success
 from macblock.constants import APP_LABEL, LAUNCHD_PF_PLIST, SYSTEM_STATE_FILE
 from macblock.launchd import bootstrap_system, enable_service, kickstart
 from macblock.pf import disable_anchor, enable_anchor
@@ -45,7 +45,7 @@ def do_enable() -> int:
         State(schema_version=st.schema_version, enabled=True, resume_at_epoch=None, blocklist_source=st.blocklist_source),
     )
     enable_anchor()
-    success("enabled")
+    print_success("enabled")
     return 0
 
 
@@ -56,7 +56,7 @@ def do_disable() -> int:
         State(schema_version=st.schema_version, enabled=False, resume_at_epoch=None, blocklist_source=st.blocklist_source),
     )
     disable_anchor()
-    success("disabled")
+    print_success("disabled")
     return 0
 
 
@@ -70,7 +70,7 @@ def do_pause(duration: str) -> int:
         State(schema_version=st.schema_version, enabled=True, resume_at_epoch=resume_at, blocklist_source=st.blocklist_source),
     )
     disable_anchor()
-    success("paused")
+    print_success("paused")
     return 0
 
 
@@ -82,5 +82,5 @@ def do_resume() -> int:
         State(schema_version=st.schema_version, enabled=True, resume_at_epoch=None, blocklist_source=st.blocklist_source),
     )
     enable_anchor()
-    success("resumed")
+    print_success("resumed")
     return 0
