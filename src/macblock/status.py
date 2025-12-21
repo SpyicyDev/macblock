@@ -2,21 +2,21 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from macblock.colors import bold, dim, error, info, success, warning
+from macblock.colors import bold, dim, error, info, success
 from macblock.constants import (
     APP_LABEL,
     LAUNCHD_DNSMASQ_PLIST,
-    LAUNCHD_PF_PLIST,
+    LAUNCHD_STATE_PLIST,
     LAUNCHD_UPSTREAMS_PLIST,
-    PF_ANCHOR_FILE,
     SYSTEM_DNSMASQ_CONF,
+    SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
     SYSTEM_STATE_FILE,
     VAR_DB_DNSMASQ_PID,
+    VAR_DB_UPSTREAM_CONF,
 )
 from macblock.exec import run
-from macblock.platform import is_root
-from macblock.pf import anchor_nat, anchor_rules, main_has_rdr_anchor, pf_info
 from macblock.state import load_state
+from macblock.system_dns import get_dns_servers
 
 
 def _exists(path_str: str, ok: bool) -> str:
@@ -30,14 +30,15 @@ def show_status() -> int:
 
     print(f"label: {APP_LABEL}")
     print(f"enabled: {success('true') if st.enabled else dim('false')}")
-    print(f"pf_anchor: {_exists(str(PF_ANCHOR_FILE), PF_ANCHOR_FILE.exists())}")
     print(f"dnsmasq_conf: {_exists(str(SYSTEM_DNSMASQ_CONF), SYSTEM_DNSMASQ_CONF.exists())}")
     print(f"dnsmasq_pid: {_exists(str(VAR_DB_DNSMASQ_PID), VAR_DB_DNSMASQ_PID.exists())}")
+    print(f"upstream_conf: {_exists(str(VAR_DB_UPSTREAM_CONF), VAR_DB_UPSTREAM_CONF.exists())}")
+    print(f"dns_exclude_services: {_exists(str(SYSTEM_DNS_EXCLUDE_SERVICES_FILE), SYSTEM_DNS_EXCLUDE_SERVICES_FILE.exists())}")
 
     plists = [
         (f"{APP_LABEL}.dnsmasq", LAUNCHD_DNSMASQ_PLIST),
         (f"{APP_LABEL}.upstreams", LAUNCHD_UPSTREAMS_PLIST),
-        (f"{APP_LABEL}.pf", LAUNCHD_PF_PLIST),
+        (f"{APP_LABEL}.state", LAUNCHD_STATE_PLIST),
     ]
 
     for label, plist in plists:
@@ -49,22 +50,16 @@ def show_status() -> int:
         when = datetime.fromtimestamp(st.resume_at_epoch)
         print(f"resume_at: {when.isoformat(sep=' ', timespec='seconds')}")
 
-    if is_root():
+    if st.managed_services:
         print()
-        print(info("pf"))
-        print(pf_info())
-        print(f"main rdr-anchor: {success('present') if main_has_rdr_anchor() else warning('missing')}")
-        print()
-        print(info("pf anchor nat/rdr"))
-        nat = anchor_nat(verbose=True)
-        print(nat if nat else dim("(none)"))
-        print()
-        print(info("pf anchor filter"))
-        rules = anchor_rules()
-        print(rules if rules else dim("(none)"))
-    else:
-        print()
-        print(warning("Run 'sudo macblock status' for PF details"))
+        print(info("managed services"))
+        for svc in st.managed_services:
+            cur = get_dns_servers(svc)
+            if cur is None:
+                cur_s = dim("dhcp")
+            else:
+                cur_s = ", ".join(cur)
+            print(f"{svc}: {cur_s}")
 
     r = run(["/usr/bin/pgrep", "-x", "dnsmasq"])
     if r.returncode == 0:
@@ -72,9 +67,9 @@ def show_status() -> int:
         if VAR_DB_DNSMASQ_PID.exists():
             print("dnsmasq: " + success("running"))
         else:
-            print("dnsmasq: " + warning("some dnsmasq is running (macblock pid-file missing)"))
+            print("dnsmasq: " + error("running but macblock pid-file missing"))
     else:
         print()
-        print("dnsmasq: " + warning("not running or not visible"))
+        print("dnsmasq: " + error("not running or not visible"))
 
     return 0

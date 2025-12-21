@@ -2,79 +2,210 @@
 
 import json
 import subprocess
-import sys
 import time
 from pathlib import Path
-
-import fcntl
 
 
 def run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
-def main() -> int:
-    pfctl = "/sbin/pfctl"
+def list_services() -> list[str]:
+    r = run(["/usr/sbin/networksetup", "-listallnetworkservices"])
+    if r.returncode != 0:
+        return []
 
-    state_path = Path("{{SYSTEM_STATE_FILE}}")
-    anchor_name = "{{APP_LABEL}}"
-    anchor_file = "{{PF_ANCHOR_FILE}}"
-    lock_file = Path("{{PF_LOCK_FILE}}")
+    services: list[str] = []
+    for raw in (r.stdout or "").splitlines():
+        line = raw.rstrip("\n")
+        if not line.strip():
+            continue
+        if line.startswith("An asterisk"):
+            continue
+        if line.startswith("*"):
+            continue
+        services.append(line.strip())
+    return services
 
-    enabled = False
-    resume_at = None
-    blocklist_source = None
 
-    if state_path.exists():
-        try:
-            data = json.loads(state_path.read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
+def getinfo_device(service: str) -> str | None:
+    r = run(["/usr/sbin/networksetup", "-getinfo", service])
+    if r.returncode != 0:
+        return None
 
-        enabled = bool(data.get("enabled") or False)
-        resume_at = data.get("resume_at_epoch")
-        blocklist_source = data.get("blocklist_source")
+    for raw in (r.stdout or "").splitlines():
+        line = raw.strip()
+        if not line.startswith("Device:"):
+            continue
+        device = line.split(":", 1)[1].strip()
+        return device or None
+
+    return None
+
+
+def is_managed_service(service: str, device: str | None, exclude: set[str]) -> bool:
+    if service in exclude:
+        return False
+
+    service_l = service.lower()
+    dev = device or ""
+
+    if dev.startswith(("utun", "ppp", "tun", "tap")):
+        return False
+
+    if any(x in service_l for x in ("vpn", "tailscale", "wireguard", "openvpn", "anyconnect")):
+        return False
+
+    if dev.startswith("en") or dev.startswith("bridge"):
+        return True
+
+    if any(x in service_l for x in ("wi-fi", "wifi", "ethernet", "usb", "thunderbolt")):
+        return True
+
+    return False
+
+
+def parse_exclude(text: str) -> set[str]:
+    out: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        out.add(line)
+    return out
+
+
+def get_dns_servers(service: str) -> list[str] | None:
+    r = run(["/usr/sbin/networksetup", "-getdnsservers", service])
+    if r.returncode != 0:
+        return None
+
+    out = (r.stdout or "").strip()
+    if not out:
+        return None
+    if "There aren't any DNS Servers" in out:
+        return None
+
+    servers: list[str] = []
+    for raw in out.splitlines():
+        ip = raw.strip()
+        if ip:
+            servers.append(ip)
+    return servers or None
+
+
+def get_search_domains(service: str) -> list[str] | None:
+    r = run(["/usr/sbin/networksetup", "-getsearchdomains", service])
+    if r.returncode != 0:
+        return None
+
+    out = (r.stdout or "").strip()
+    if not out:
+        return None
+    if "There aren't any Search Domains" in out:
+        return None
+
+    domains: list[str] = []
+    for raw in out.splitlines():
+        dom = raw.strip().strip(".")
+        if dom:
+            domains.append(dom)
+    return domains or None
+
+
+def set_dns_servers(service: str, servers: list[str] | None) -> None:
+    if servers:
+        run(["/usr/sbin/networksetup", "-setdnsservers", service, *servers])
     else:
-        data = {"schema_version": 1}
+        run(["/usr/sbin/networksetup", "-setdnsservers", service, "Empty"])
+
+
+def set_search_domains(service: str, domains: list[str] | None) -> None:
+    if domains:
+        run(["/usr/sbin/networksetup", "-setsearchdomains", service, *domains])
+    else:
+        run(["/usr/sbin/networksetup", "-setsearchdomains", service, "Empty"])
+
+
+def main() -> int:
+    state_path = Path("{{SYSTEM_STATE_FILE}}")
+    exclude_path = Path("{{DNS_EXCLUDE_SERVICES_FILE}}")
+
+    if not state_path.exists():
+        return 0
+
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return 0
+
+    enabled = bool(data.get("enabled") or False)
+
+    resume_at_raw = data.get("resume_at_epoch")
+    resume_at: int | None
+    if resume_at_raw is None:
+        resume_at = None
+    else:
+        try:
+            resume_at = int(resume_at_raw)
+        except Exception:
+            resume_at = None
 
     now = int(time.time())
 
-    should_enable = enabled
-    should_load_anchor = enabled
+    paused = False
+    if resume_at is not None and resume_at > now:
+        paused = True
 
-    if resume_at is not None:
+    if resume_at is not None and not paused:
+        data["resume_at_epoch"] = None
+
+    exclude = set()
+    if exclude_path.exists():
         try:
-            resume_at_int = int(resume_at)
+            exclude = parse_exclude(exclude_path.read_text(encoding="utf-8"))
         except Exception:
-            resume_at_int = now
+            exclude = set()
 
-        if resume_at_int > now:
-            should_load_anchor = False
-        else:
-            data["resume_at_epoch"] = None
+    services = []
+    for name in list_services():
+        device = getinfo_device(name)
+        if is_managed_service(name, device, exclude):
+            services.append(name)
 
-    lock_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_file, "a+", encoding="utf-8") as lf:
-        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+    services = sorted(services, key=lambda x: x.lower())
 
-        r1 = run([pfctl, "-E"])
-        if r1.returncode not in (0, 1):
-            sys.stderr.write(r1.stderr)
-            return r1.returncode
+    dns_backup = data.get("dns_backup")
+    if not isinstance(dns_backup, dict):
+        dns_backup = {}
+        data["dns_backup"] = dns_backup
 
-        if should_enable and should_load_anchor:
-            r3 = run([pfctl, "-a", anchor_name, "-N", "-f", anchor_file])
-            if r3.returncode != 0:
-                sys.stderr.write(r3.stderr)
-                return r3.returncode
-        else:
-            r4 = run([pfctl, "-a", anchor_name, "-F", "all"])
-            if r4.returncode != 0:
-                sys.stderr.write(r4.stderr)
-                return r4.returncode
+    if enabled and not paused:
+        for service in services:
+            if service not in dns_backup:
+                current_dns = get_dns_servers(service)
+                if current_dns != ["127.0.0.1"]:
+                    dns_backup[service] = {
+                        "dns": current_dns,
+                        "search": get_search_domains(service),
+                    }
 
-    data["enabled"] = bool(should_enable)
-    data["blocklist_source"] = blocklist_source
+            set_dns_servers(service, ["127.0.0.1"])
+
+        data["managed_services"] = services
+
+    else:
+        managed = data.get("managed_services")
+        to_restore = managed if isinstance(managed, list) else services
+
+        for service in to_restore:
+            cfg = dns_backup.get(service)
+            if not isinstance(cfg, dict):
+                continue
+            dns = cfg.get("dns") if isinstance(cfg.get("dns"), list) else None
+            search = cfg.get("search") if isinstance(cfg.get("search"), list) else None
+            set_dns_servers(service, dns)
+            set_search_domains(service, search)
 
     tmp = state_path.with_suffix(state_path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")

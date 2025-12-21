@@ -8,19 +8,18 @@ from macblock.colors import print_info, print_success, print_warning
 from macblock.constants import (
     APP_LABEL,
     DNSMASQ_USER,
+    LAUNCHD_DIR,
     LAUNCHD_DNSMASQ_PLIST,
-    LAUNCHD_PF_PLIST,
+    LAUNCHD_STATE_PLIST,
     LAUNCHD_UPSTREAMS_PLIST,
-    PF_ANCHOR_FILE,
-    PF_CONF,
-    PF_EXCLUDE_INTERFACES_FILE,
-    PF_LOCK_FILE,
     SYSTEM_BIN_DIR,
     SYSTEM_BLACKLIST_FILE,
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_CONFIG_DIR,
     SYSTEM_DNSMASQ_CONF,
+    SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
     SYSTEM_RAW_BLOCKLIST_FILE,
+    SYSTEM_RESOLVER_DIR,
     SYSTEM_STATE_FILE,
     SYSTEM_SUPPORT_DIR,
     SYSTEM_WHITELIST_FILE,
@@ -33,8 +32,8 @@ from macblock.errors import MacblockError
 from macblock.exec import run
 from macblock.fs import atomic_write_text, ensure_dir
 from macblock.launchd import bootout_system, bootstrap_system, enable_service, kickstart, service_exists
-from macblock.pf import disable_anchor, ensure_pf_conf_block, remove_pf_conf_block, validate_pf_conf, write_anchor_file
-from macblock.state import State, save_state_atomic
+from macblock.state import State, load_state, save_state_atomic
+from macblock.system_dns import ServiceDnsBackup, restore_from_backup
 from macblock.templates import read_template
 from macblock.users import delete_system_user, ensure_system_user
 
@@ -81,11 +80,11 @@ def _write_helpers() -> None:
 
     mapping = {
         "APP_LABEL": APP_LABEL,
-        "PF_ANCHOR_FILE": str(PF_ANCHOR_FILE),
-        "PF_LOCK_FILE": str(SYSTEM_SUPPORT_DIR / "pf.lock"),
         "SYSTEM_STATE_FILE": str(SYSTEM_STATE_FILE),
         "UPSTREAM_OUT": str(VAR_DB_UPSTREAM_CONF),
         "DNSMASQ_PID_FILE": str(VAR_DB_DNSMASQ_PID),
+        "DNS_EXCLUDE_SERVICES_FILE": str(SYSTEM_DNS_EXCLUDE_SERVICES_FILE),
+        "RESOLVER_DIR": str(SYSTEM_RESOLVER_DIR),
     }
 
     helpers: list[tuple[str, Path, int]] = [
@@ -125,10 +124,6 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
         "  </array>\n"
         "  <key>StartInterval</key>\n"
         "  <integer>30</integer>\n"
-        "  <key>UserName</key>\n"
-        f"  <string>{DNSMASQ_USER}</string>\n"
-        "  <key>GroupName</key>\n"
-        f"  <string>{DNSMASQ_USER}</string>\n"
         "  <key>StandardOutPath</key>\n"
         f"  <string>{VAR_DB_DIR / 'upstreams.out.log'}</string>\n"
         "  <key>StandardErrorPath</key>\n"
@@ -139,13 +134,13 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
         "</plist>\n"
     )
 
-    pf_plist = (
+    state_plist = (
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
         "<plist version=\"1.0\">\n"
         "<dict>\n"
         "  <key>Label</key>\n"
-        f"  <string>{APP_LABEL}.pf</string>\n"
+        f"  <string>{APP_LABEL}.state</string>\n"
         "  <key>ProgramArguments</key>\n"
         "  <array>\n"
         "    <string>/usr/bin/python3</string>\n"
@@ -154,9 +149,9 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
         "  <key>StartInterval</key>\n"
         "  <integer>30</integer>\n"
         "  <key>StandardOutPath</key>\n"
-        f"  <string>{VAR_DB_DIR / 'pf.out.log'}</string>\n"
+        f"  <string>{VAR_DB_DIR / 'state.out.log'}</string>\n"
         "  <key>StandardErrorPath</key>\n"
-        f"  <string>{VAR_DB_DIR / 'pf.err.log'}</string>\n"
+        f"  <string>{VAR_DB_DIR / 'state.err.log'}</string>\n"
         "  <key>RunAtLoad</key>\n"
         "  <true/>\n"
         "</dict>\n"
@@ -166,7 +161,7 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
     for path, content in [
         (LAUNCHD_DNSMASQ_PLIST, dnsmasq_plist),
         (LAUNCHD_UPSTREAMS_PLIST, upstreams_plist),
-        (LAUNCHD_PF_PLIST, pf_plist),
+        (LAUNCHD_STATE_PLIST, state_plist),
     ]:
         atomic_write_text(path, content, mode=0o644)
         os.chown(path, 0, 0)
@@ -181,25 +176,19 @@ def _bootstrap(plist: Path, label: str) -> None:
 def _detect_existing_install() -> list[str]:
     leftovers: list[str] = []
 
+    old_pf_plist = LAUNCHD_DIR / f"{APP_LABEL}.pf.plist"
+
     for p in [
         SYSTEM_SUPPORT_DIR,
         SYSTEM_DNSMASQ_CONF,
         SYSTEM_STATE_FILE,
-        PF_ANCHOR_FILE,
         LAUNCHD_DNSMASQ_PLIST,
         LAUNCHD_UPSTREAMS_PLIST,
-        LAUNCHD_PF_PLIST,
+        LAUNCHD_STATE_PLIST,
+        old_pf_plist,
     ]:
         if p.exists():
             leftovers.append(str(p))
-
-    if PF_CONF.exists():
-        try:
-            text = PF_CONF.read_text(encoding="utf-8")
-        except Exception:
-            text = ""
-        if "# macblock begin" in text or "# macblock end" in text:
-            leftovers.append(str(PF_CONF))
 
     return leftovers
 
@@ -252,64 +241,110 @@ def do_install(force: bool = False) -> int:
     atomic_write_text(SYSTEM_DNSMASQ_CONF, render_dnsmasq_conf(), mode=0o644)
     os.chown(SYSTEM_DNSMASQ_CONF, 0, 0)
 
-    if not SYSTEM_STATE_FILE.exists():
-        save_state_atomic(SYSTEM_STATE_FILE, State(schema_version=1, enabled=False, resume_at_epoch=None, blocklist_source=None))
-        os.chown(SYSTEM_STATE_FILE, 0, 0)
-
-    if not PF_EXCLUDE_INTERFACES_FILE.exists():
+    if not SYSTEM_DNS_EXCLUDE_SERVICES_FILE.exists():
         atomic_write_text(
-            PF_EXCLUDE_INTERFACES_FILE,
-            "# One interface name per line (e.g. utun0)\n",
+            SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
+            "# One network service name per line (exact match)\n",
             mode=0o644,
         )
-        os.chown(PF_EXCLUDE_INTERFACES_FILE, 0, 0)
+        os.chown(SYSTEM_DNS_EXCLUDE_SERVICES_FILE, 0, 0)
+
+    if not SYSTEM_STATE_FILE.exists():
+        save_state_atomic(
+            SYSTEM_STATE_FILE,
+            State(
+                schema_version=2,
+                enabled=False,
+                resume_at_epoch=None,
+                blocklist_source=None,
+                dns_backup={},
+                managed_services=[],
+                resolver_domains=[],
+            ),
+        )
+        os.chown(SYSTEM_STATE_FILE, 0, 0)
 
     _write_helpers()
-
-    write_anchor_file()
-    ensure_pf_conf_block()
-    validate_pf_conf()
-
     _write_launchd_plists(dnsmasq_bin)
 
+    old_pf_plist = LAUNCHD_DIR / f"{APP_LABEL}.pf.plist"
+
     if force:
-        for plist in [LAUNCHD_PF_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST]:
-            try:
-                bootout_system(plist)
-            except Exception:
-                pass
+        for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST]:
+            if plist.exists():
+                try:
+                    bootout_system(plist)
+                except Exception:
+                    pass
 
     print_info("installing launchd jobs")
 
     _bootstrap(LAUNCHD_UPSTREAMS_PLIST, f"{APP_LABEL}.upstreams")
     _bootstrap(LAUNCHD_DNSMASQ_PLIST, f"{APP_LABEL}.dnsmasq")
-    _bootstrap(LAUNCHD_PF_PLIST, f"{APP_LABEL}.pf")
+    _bootstrap(LAUNCHD_STATE_PLIST, f"{APP_LABEL}.state")
 
-    print_warning("PF is not enabled by install; run: sudo macblock enable")
+    print_warning("macblock is not enabled by install; run: sudo macblock enable")
     print_success("installed")
     return 0
 
 
+def _remove_managed_resolvers(domains: list[str]) -> None:
+    for dom in domains:
+        p = SYSTEM_RESOLVER_DIR / dom
+        if not p.exists():
+            continue
+        try:
+            head = p.read_text(encoding="utf-8", errors="ignore")[:64]
+        except Exception:
+            continue
+        if not head.startswith("# macblock"):
+            continue
+        try:
+            p.unlink()
+        except Exception:
+            pass
+
+
+def _restore_dns_from_state(st: State) -> None:
+    for service in st.managed_services:
+        cfg = st.dns_backup.get(service)
+        if not isinstance(cfg, dict):
+            continue
+        dns_val = cfg.get("dns")
+        search_val = cfg.get("search")
+        backup = ServiceDnsBackup(
+            dns_servers=list(dns_val) if isinstance(dns_val, list) else None,
+            search_domains=list(search_val) if isinstance(search_val, list) else None,
+        )
+        restore_from_backup(service, backup)
+
+
 def do_uninstall(force: bool = False) -> int:
+    st = load_state(SYSTEM_STATE_FILE)
+
     try:
-        disable_anchor()
+        _restore_dns_from_state(st)
     except Exception:
         if not force:
             raise
 
-    for plist in [LAUNCHD_PF_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST]:
+    try:
+        _remove_managed_resolvers(st.resolver_domains)
+    except Exception:
+        if not force:
+            raise
+
+    old_pf_plist = LAUNCHD_DIR / f"{APP_LABEL}.pf.plist"
+
+    for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST]:
         try:
-            bootout_system(plist)
+            if plist.exists():
+                bootout_system(plist)
         except Exception:
             if not force:
                 raise
 
-    remove_pf_conf_block()
-
-    if PF_ANCHOR_FILE.exists():
-        PF_ANCHOR_FILE.unlink()
-
-    for p in [LAUNCHD_DNSMASQ_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_PF_PLIST]:
+    for p in [LAUNCHD_DNSMASQ_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_STATE_PLIST, old_pf_plist]:
         if p.exists():
             p.unlink()
 
@@ -337,8 +372,7 @@ def do_uninstall(force: bool = False) -> int:
         SYSTEM_WHITELIST_FILE,
         SYSTEM_BLACKLIST_FILE,
         SYSTEM_STATE_FILE,
-        PF_EXCLUDE_INTERFACES_FILE,
-        PF_LOCK_FILE,
+        SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
     ]:
         if p.exists():
             p.unlink()
@@ -358,21 +392,9 @@ def do_uninstall(force: bool = False) -> int:
 
     leftovers: list[str] = []
 
-    for label in [f"{APP_LABEL}.dnsmasq", f"{APP_LABEL}.upstreams", f"{APP_LABEL}.pf"]:
+    for label in [f"{APP_LABEL}.dnsmasq", f"{APP_LABEL}.upstreams", f"{APP_LABEL}.state", f"{APP_LABEL}.pf"]:
         if service_exists(label):
             leftovers.append(f"launchd {label}")
-
-    if PF_ANCHOR_FILE.exists():
-        leftovers.append(f"pf anchor file {PF_ANCHOR_FILE}")
-
-    if PF_CONF.exists():
-        text = PF_CONF.read_text(encoding="utf-8")
-        if "# macblock begin" in text or "# macblock end" in text:
-            leftovers.append(f"pf.conf still contains macblock block ({PF_CONF})")
-
-    r = run(["/sbin/pfctl", "-a", APP_LABEL, "-s", "rules"])
-    if r.returncode == 0 and r.stdout.strip():
-        leftovers.append("pf anchor rules still loaded")
 
     if leftovers:
         msg = "uninstall incomplete: " + ", ".join(leftovers)

@@ -21,7 +21,7 @@ from macblock.launchd import kickstart, service_exists
 from macblock.errors import MacblockError
 from macblock.exec import run
 from macblock.fs import atomic_write_text
-from macblock.state import State, load_state, save_state_atomic
+from macblock.state import load_state, replace_state, save_state_atomic
 
 
 _domain_re = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$", re.IGNORECASE)
@@ -159,7 +159,7 @@ def set_blocklist_source(source: str) -> int:
     st = load_state(SYSTEM_STATE_FILE)
     save_state_atomic(
         SYSTEM_STATE_FILE,
-        State(schema_version=st.schema_version, enabled=st.enabled, resume_at_epoch=st.resume_at_epoch, blocklist_source=src),
+        replace_state(st, blocklist_source=src),
     )
 
     print_success(f"blocklist source set: {src}")
@@ -197,7 +197,7 @@ def update_blocklist(source: str | None = None, sha256: str | None = None) -> in
 
     save_state_atomic(
         SYSTEM_STATE_FILE,
-        State(schema_version=st.schema_version, enabled=st.enabled, resume_at_epoch=st.resume_at_epoch, blocklist_source=chosen),
+        replace_state(st, blocklist_source=chosen),
     )
 
     reload_dnsmasq()

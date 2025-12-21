@@ -39,13 +39,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_uninstall = sub.add_parser("uninstall", help="Uninstall system integration (root)")
     p_uninstall.add_argument("--force", action="store_true")
 
-    sub.add_parser("enable", help="Enable interception (root)")
-    sub.add_parser("disable", help="Disable interception (root)")
+    sub.add_parser("enable", help="Enable blocking (set system DNS to localhost) (root)")
+    sub.add_parser("disable", help="Disable blocking (restore system DNS) (root)")
 
-    p_pause = sub.add_parser("pause", help="Disable interception and auto-resume (root)")
+    p_pause = sub.add_parser("pause", help="Temporarily disable (restore DNS) and auto-resume (root)")
     p_pause.add_argument("duration", help="Duration like 10m, 2h")
 
-    sub.add_parser("resume", help="Resume interception now (root)")
+    sub.add_parser("resume", help="Resume blocking now (root)")
 
     p_test = sub.add_parser("test", help="Test a domain")
     p_test.add_argument("domain")

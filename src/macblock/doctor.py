@@ -2,29 +2,27 @@ from __future__ import annotations
 
 import errno
 import socket
+import time
 
 from macblock.colors import bold, error, info, success, warning
 from macblock.constants import (
     APP_LABEL,
     DNSMASQ_LISTEN_ADDR,
-    DNSMASQ_LISTEN_ADDR_V6,
     DNSMASQ_LISTEN_PORT,
     LAUNCHD_DNSMASQ_PLIST,
-    LAUNCHD_PF_PLIST,
+    LAUNCHD_STATE_PLIST,
     LAUNCHD_UPSTREAMS_PLIST,
-    PF_ANCHOR_FILE,
-    PF_CONF,
-    PF_EXCLUDE_INTERFACES_FILE,
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_DNSMASQ_CONF,
+    SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
     SYSTEM_RAW_BLOCKLIST_FILE,
     SYSTEM_STATE_FILE,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )
 from macblock.exec import run
-from macblock.platform import is_root
-from macblock.pf import anchor_nat, validate_pf_conf
+from macblock.state import load_state
+from macblock.system_dns import get_dns_servers
 
 
 def _check_file(path) -> tuple[bool, str]:
@@ -32,9 +30,9 @@ def _check_file(path) -> tuple[bool, str]:
     return ok, str(path)
 
 
-def _tcp_connect_ok(host: str, port: int, *, family: int) -> bool:
+def _tcp_connect_ok(host: str, port: int) -> bool:
     try:
-        s = socket.socket(family, socket.SOCK_STREAM)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     except OSError:
         return False
 
@@ -58,15 +56,14 @@ def run_diagnostics() -> int:
 
     checks = [
         ("state", SYSTEM_STATE_FILE),
-        ("pf.conf", PF_CONF),
-        ("pf anchor", PF_ANCHOR_FILE),
         ("dnsmasq.conf", SYSTEM_DNSMASQ_CONF),
         ("blocklist.raw", SYSTEM_RAW_BLOCKLIST_FILE),
         ("blocklist.conf", SYSTEM_BLOCKLIST_FILE),
         ("upstream.conf", VAR_DB_UPSTREAM_CONF),
+        ("dns.exclude_services", SYSTEM_DNS_EXCLUDE_SERVICES_FILE),
         ("plist dnsmasq", LAUNCHD_DNSMASQ_PLIST),
         ("plist upstreams", LAUNCHD_UPSTREAMS_PLIST),
-        ("plist pf", LAUNCHD_PF_PLIST),
+        ("plist state", LAUNCHD_STATE_PLIST),
     ]
 
     ok_all = True
@@ -81,9 +78,10 @@ def run_diagnostics() -> int:
             size = SYSTEM_BLOCKLIST_FILE.stat().st_size
         except Exception:
             size = 0
-
         if size == 0:
             print(warning("blocklist.conf is empty; run 'sudo macblock update'"))
+
+    st = load_state(SYSTEM_STATE_FILE)
 
     pid_ok = False
     pid = None
@@ -109,49 +107,22 @@ def run_diagnostics() -> int:
         if cmd and str(SYSTEM_DNSMASQ_CONF) not in cmd:
             print(warning("dnsmasq process does not appear to be macblock-managed"))
 
-    ok_v4_tcp = _tcp_connect_ok(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT, family=socket.AF_INET)
-    ok_v6_tcp = _tcp_connect_ok(DNSMASQ_LISTEN_ADDR_V6, DNSMASQ_LISTEN_PORT, family=socket.AF_INET6)
-
-    if pid_ok and not (ok_v4_tcp or ok_v6_tcp):
+    if pid_ok and not _tcp_connect_ok(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT):
         ok_all = False
-        print(error(f"dnsmasq not listening on {DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT} or {DNSMASQ_LISTEN_ADDR_V6}:{DNSMASQ_LISTEN_PORT}"))
+        print(error(f"dnsmasq not listening on {DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT}"))
 
-    r_if = run(["/sbin/ifconfig", "-l"])
-    ifaces = r_if.stdout.strip().split() if r_if.returncode == 0 else []
-    vpn_ifaces = [x for x in ifaces if x.startswith("utun") or x.startswith("ppp")]
-    if vpn_ifaces:
-        excluded = []
-        if PF_EXCLUDE_INTERFACES_FILE.exists():
-            excluded = [
-                line.strip()
-                for line in PF_EXCLUDE_INTERFACES_FILE.read_text(encoding="utf-8").splitlines()
-                if line.strip() and not line.strip().startswith("#")
-            ]
-        missing = [x for x in vpn_ifaces if x not in excluded]
+    now = int(time.time())
+    paused = st.resume_at_epoch is not None and st.resume_at_epoch > now
+
+    if st.enabled and not paused and st.managed_services:
+        missing = []
+        for svc in st.managed_services:
+            cur = get_dns_servers(svc)
+            if cur != ["127.0.0.1"]:
+                missing.append(svc)
         if missing:
-            print(
-                warning(
-                    "VPN interfaces detected (" + ", ".join(missing) + "). "
-                    "If your VPN breaks, add them to "
-                    + str(PF_EXCLUDE_INTERFACES_FILE)
-                    + " and re-enable macblock."
-                )
-            )
-
-    if is_root() and PF_CONF.exists():
-        try:
-            validate_pf_conf()
-            print(info("pf.conf syntax: ") + success("ok"))
-        except Exception as e:
             ok_all = False
-            print(info("pf.conf syntax: ") + error(str(e)))
-
-        nat = anchor_nat(verbose=True)
-        print()
-        print(info("pf anchor nat/rdr"))
-        print(nat if nat else "(none)")
-    else:
-        print(warning("Run 'sudo macblock doctor' to validate PF config"))
+            print(warning("DNS is not set to localhost for: " + ", ".join(missing)))
 
     r = run(["/usr/bin/pgrep", "-x", "dnsmasq"])
     if r.returncode == 0:
@@ -161,6 +132,11 @@ def run_diagnostics() -> int:
             print(info("dnsmasq: ") + success("running"))
     else:
         print(info("dnsmasq: ") + warning("not running or not visible"))
+
+    r_dns = run(["/usr/sbin/scutil", "--dns"])
+    if r_dns.returncode == 0:
+        if "encrypted" in (r_dns.stdout or "").lower() or "doh" in (r_dns.stdout or "").lower():
+            print(warning("Encrypted DNS may bypass system DNS settings"))
 
     print(info("label: ") + APP_LABEL)
 

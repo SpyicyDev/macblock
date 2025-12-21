@@ -11,10 +11,6 @@
     <string>-C</string>
     <string>{{DNSMASQ_CONF}}</string>
   </array>
-  <key>UserName</key>
-  <string>{{DNSMASQ_USER}}</string>
-  <key>GroupName</key>
-  <string>{{DNSMASQ_USER}}</string>
   <key>StandardOutPath</key>
   <string>{{DNSMASQ_STDOUT}}</string>
   <key>StandardErrorPath</key>

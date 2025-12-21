@@ -7,6 +7,9 @@ from macblock.constants import DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT
 from macblock.exec import run
 
 
+__test__ = False
+
+
 def test_domain(domain: str) -> int:
     dig = shutil.which("dig")
     if dig is None:

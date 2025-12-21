@@ -13,6 +13,9 @@ class State:
     enabled: bool
     resume_at_epoch: int | None
     blocklist_source: str | None
+    dns_backup: dict[str, dict[str, list[str] | None]]
+    managed_services: list[str]
+    resolver_domains: list[str]
 
 
 def _iso_to_epoch_seconds(value: str) -> int | None:
@@ -29,7 +32,15 @@ def _iso_to_epoch_seconds(value: str) -> int | None:
 
 def load_state(path: Path) -> State:
     if not path.exists():
-        return State(schema_version=1, enabled=False, resume_at_epoch=None, blocklist_source=None)
+        return State(
+            schema_version=2,
+            enabled=False,
+            resume_at_epoch=None,
+            blocklist_source=None,
+            dns_backup={},
+            managed_services=[],
+            resolver_domains=[],
+        )
 
     data = json.loads(path.read_text(encoding="utf-8"))
 
@@ -48,12 +59,56 @@ def load_state(path: Path) -> State:
 
     src = data.get("blocklist_source")
 
+    dns_backup_raw = data.get("dns_backup")
+    dns_backup: dict[str, dict[str, list[str] | None]] = {}
+    if isinstance(dns_backup_raw, dict):
+        for service, cfg in dns_backup_raw.items():
+            if not isinstance(service, str) or not isinstance(cfg, dict):
+                continue
+            dns_val = cfg.get("dns")
+            search_val = cfg.get("search")
+            dns_backup[service] = {
+                "dns": list(dns_val) if isinstance(dns_val, list) else None,
+                "search": list(search_val) if isinstance(search_val, list) else None,
+            }
+
+    managed_services_raw = data.get("managed_services")
+    managed_services: list[str] = []
+    if isinstance(managed_services_raw, list):
+        for s in managed_services_raw:
+            if isinstance(s, str) and s:
+                managed_services.append(s)
+
+    resolver_domains_raw = data.get("resolver_domains")
+    resolver_domains: list[str] = []
+    if isinstance(resolver_domains_raw, list):
+        for d in resolver_domains_raw:
+            if isinstance(d, str) and d:
+                resolver_domains.append(d)
+
     return State(
-        schema_version=int(data.get("schema_version", 1)),
+        schema_version=int(data.get("schema_version", 2)),
         enabled=enabled,
         resume_at_epoch=resume_at_epoch,
         blocklist_source=str(src) if src is not None else None,
+        dns_backup=dns_backup,
+        managed_services=managed_services,
+        resolver_domains=resolver_domains,
     )
+
+
+def replace_state(st: State, **updates: Any) -> State:
+    payload: dict[str, Any] = {
+        "schema_version": st.schema_version,
+        "enabled": st.enabled,
+        "resume_at_epoch": st.resume_at_epoch,
+        "blocklist_source": st.blocklist_source,
+        "dns_backup": st.dns_backup,
+        "managed_services": st.managed_services,
+        "resolver_domains": st.resolver_domains,
+    }
+    payload.update(updates)
+    return State(**payload)
 
 
 def save_state_atomic(path: Path, state: State) -> None:
@@ -64,6 +119,9 @@ def save_state_atomic(path: Path, state: State) -> None:
         "enabled": state.enabled,
         "resume_at_epoch": state.resume_at_epoch,
         "blocklist_source": state.blocklist_source,
+        "dns_backup": state.dns_backup,
+        "managed_services": state.managed_services,
+        "resolver_domains": state.resolver_domains,
     }
 
     tmp = path.with_suffix(path.suffix + ".tmp")
