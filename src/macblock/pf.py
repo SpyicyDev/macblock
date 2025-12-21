@@ -14,7 +14,6 @@ from macblock.constants import (
     DNSMASQ_LISTEN_ADDR,
     DNSMASQ_LISTEN_ADDR_V6,
     DNSMASQ_LISTEN_PORT,
-    DNSMASQ_QUERY_PORT,
     DNSMASQ_USER,
     PF_ANCHOR_FILE,
     PF_CONF,
@@ -109,7 +108,6 @@ def _read_upstream_nameserver_ips() -> tuple[list[str], list[str]]:
 
 def render_anchor_rules() -> str:
     port = DNSMASQ_LISTEN_PORT
-    query_port = DNSMASQ_QUERY_PORT
     excluded = _read_excluded_interfaces()
     upstream_v4, upstream_v6 = _read_upstream_nameserver_ips()
 
@@ -124,9 +122,6 @@ def render_anchor_rules() -> str:
 
     for ip in upstream_v6:
         lines.append(f"no rdr on egress inet6 proto {{ udp tcp }} from any to {ip} port 53")
-
-    lines.append(f"no rdr on egress inet proto {{ udp tcp }} from any port {query_port} to any port 53")
-    lines.append(f"no rdr on egress inet6 proto {{ udp tcp }} from any port {query_port} to any port 53")
 
     lines.extend(
         [
