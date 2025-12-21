@@ -13,6 +13,7 @@ from macblock.constants import (
     DNSMASQ_LISTEN_ADDR,
     DNSMASQ_LISTEN_ADDR_V6,
     DNSMASQ_LISTEN_PORT,
+    DNSMASQ_QUERY_PORT,
     DNSMASQ_USER,
     PF_ANCHOR_FILE,
     PF_CONF,
@@ -63,7 +64,7 @@ def _read_excluded_interfaces() -> list[str]:
 
 def render_anchor_rules() -> str:
     port = DNSMASQ_LISTEN_PORT
-    user = DNSMASQ_USER
+    query_port = DNSMASQ_QUERY_PORT
     excluded = _read_excluded_interfaces()
 
     lines: list[str] = []
@@ -72,10 +73,13 @@ def render_anchor_rules() -> str:
         lines.append(f"no rdr on {iface} inet proto {{ udp tcp }} from any to any port 53")
         lines.append(f"no rdr on {iface} inet6 proto {{ udp tcp }} from any to any port 53")
 
+    lines.append(f"no rdr on egress inet proto {{ udp tcp }} from any port {query_port} to any port 53")
+    lines.append(f"no rdr on egress inet6 proto {{ udp tcp }} from any port {query_port} to any port 53")
+
     lines.extend(
         [
-            f"rdr pass on egress inet proto {{ udp tcp }} from any to any port 53 user != {user} -> {DNSMASQ_LISTEN_ADDR} port {port}",
-            f"rdr pass on egress inet6 proto {{ udp tcp }} from any to any port 53 user != {user} -> {DNSMASQ_LISTEN_ADDR_V6} port {port}",
+            f"rdr pass on egress inet proto {{ udp tcp }} from any to any port 53 -> {DNSMASQ_LISTEN_ADDR} port {port}",
+            f"rdr pass on egress inet6 proto {{ udp tcp }} from any to any port 53 -> {DNSMASQ_LISTEN_ADDR_V6} port {port}",
         ]
     )
 
