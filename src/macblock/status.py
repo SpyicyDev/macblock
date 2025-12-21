@@ -5,9 +5,8 @@ from datetime import datetime
 from macblock.colors import bold, dim, error, info, success
 from macblock.constants import (
     APP_LABEL,
+    LAUNCHD_DIR,
     LAUNCHD_DNSMASQ_PLIST,
-    LAUNCHD_STATE_PLIST,
-    LAUNCHD_UPSTREAMS_PLIST,
     SYSTEM_DNSMASQ_CONF,
     SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
     SYSTEM_STATE_FILE,
@@ -35,10 +34,11 @@ def show_status() -> int:
     print(f"upstream_conf: {_exists(str(VAR_DB_UPSTREAM_CONF), VAR_DB_UPSTREAM_CONF.exists())}")
     print(f"dns_exclude_services: {_exists(str(SYSTEM_DNS_EXCLUDE_SERVICES_FILE), SYSTEM_DNS_EXCLUDE_SERVICES_FILE.exists())}")
 
+    daemon_plist = LAUNCHD_DIR / f"{APP_LABEL}.daemon.plist"
+
     plists = [
         (f"{APP_LABEL}.dnsmasq", LAUNCHD_DNSMASQ_PLIST),
-        (f"{APP_LABEL}.upstreams", LAUNCHD_UPSTREAMS_PLIST),
-        (f"{APP_LABEL}.state", LAUNCHD_STATE_PLIST),
+        (f"{APP_LABEL}.daemon", daemon_plist),
     ]
 
     for label, plist in plists:

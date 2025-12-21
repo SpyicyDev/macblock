@@ -91,8 +91,6 @@ def _write_helpers() -> None:
     }
 
     helpers: list[tuple[str, Path, int]] = [
-        ("apply_state.py.tmpl", SYSTEM_BIN_DIR / "apply-state.py", 0o755),
-        ("update_upstreams.py.tmpl", SYSTEM_BIN_DIR / "update-upstreams.py", 0o755),
         ("macblockd.py.tmpl", SYSTEM_BIN_DIR / "macblockd.py", 0o755),
     ]
 
@@ -176,8 +174,6 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
     for path, content in [
         (LAUNCHD_DNSMASQ_PLIST, dnsmasq_plist),
         (LAUNCHD_DAEMON_PLIST, daemon_plist),
-        (LAUNCHD_UPSTREAMS_PLIST, upstreams_plist),
-        (LAUNCHD_STATE_PLIST, state_plist),
     ]:
         atomic_write_text(path, content, mode=0o644)
         os.chown(path, 0, 0)
@@ -301,9 +297,7 @@ def do_install(force: bool = False) -> int:
 
     print_info("installing launchd jobs")
 
-    _bootstrap(LAUNCHD_UPSTREAMS_PLIST, f"{APP_LABEL}.upstreams")
     _bootstrap(LAUNCHD_DNSMASQ_PLIST, f"{APP_LABEL}.dnsmasq")
-    _bootstrap(LAUNCHD_STATE_PLIST, f"{APP_LABEL}.state")
     _bootstrap(LAUNCHD_DAEMON_PLIST, f"{APP_LABEL}.daemon")
 
     print_warning("macblock is not enabled by install; run: sudo macblock enable")
@@ -404,6 +398,8 @@ def do_uninstall(force: bool = False) -> int:
         SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
         SYSTEM_LOG_DIR / "dnsmasq.out.log",
         SYSTEM_LOG_DIR / "dnsmasq.err.log",
+        SYSTEM_LOG_DIR / "daemon.out.log",
+        SYSTEM_LOG_DIR / "daemon.err.log",
         SYSTEM_LOG_DIR / "upstreams.out.log",
         SYSTEM_LOG_DIR / "upstreams.err.log",
         SYSTEM_LOG_DIR / "state.out.log",

@@ -9,9 +9,8 @@ from macblock.constants import (
     APP_LABEL,
     DNSMASQ_LISTEN_ADDR,
     DNSMASQ_LISTEN_PORT,
+    LAUNCHD_DIR,
     LAUNCHD_DNSMASQ_PLIST,
-    LAUNCHD_STATE_PLIST,
-    LAUNCHD_UPSTREAMS_PLIST,
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_DNSMASQ_CONF,
     SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
@@ -54,6 +53,8 @@ def _tcp_connect_ok(host: str, port: int) -> bool:
 def run_diagnostics() -> int:
     print(bold("macblock doctor"))
 
+    daemon_plist = LAUNCHD_DIR / f"{APP_LABEL}.daemon.plist"
+
     checks = [
         ("state", SYSTEM_STATE_FILE),
         ("dnsmasq.conf", SYSTEM_DNSMASQ_CONF),
@@ -62,8 +63,7 @@ def run_diagnostics() -> int:
         ("upstream.conf", VAR_DB_UPSTREAM_CONF),
         ("dns.exclude_services", SYSTEM_DNS_EXCLUDE_SERVICES_FILE),
         ("plist dnsmasq", LAUNCHD_DNSMASQ_PLIST),
-        ("plist upstreams", LAUNCHD_UPSTREAMS_PLIST),
-        ("plist state", LAUNCHD_STATE_PLIST),
+        ("plist daemon", daemon_plist),
     ]
 
     ok_all = True
