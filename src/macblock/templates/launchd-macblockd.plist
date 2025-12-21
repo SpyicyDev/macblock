@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{APP_LABEL}}.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>{{MACBLOCKD_BIN}}</string>
+  </array>
+  <key>StandardOutPath</key>
+  <string>{{MACBLOCKD_STDOUT}}</string>
+  <key>StandardErrorPath</key>
+  <string>{{MACBLOCKD_STDERR}}</string>
+  <key>WorkingDirectory</key>
+  <string>/var/empty</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>
