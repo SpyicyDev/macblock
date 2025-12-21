@@ -76,6 +76,15 @@ def run_diagnostics() -> int:
         ok_all = ok_all and ok
         print(f"{name}: " + (success(p) if ok else error(p)))
 
+    if SYSTEM_BLOCKLIST_FILE.exists():
+        try:
+            size = SYSTEM_BLOCKLIST_FILE.stat().st_size
+        except Exception:
+            size = 0
+
+        if size == 0:
+            print(warning("blocklist.conf is empty; run 'sudo macblock update'"))
+
     pid_ok = False
     pid = None
     if VAR_DB_DNSMASQ_PID.exists():

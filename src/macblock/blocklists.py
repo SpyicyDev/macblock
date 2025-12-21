@@ -7,6 +7,7 @@ from pathlib import Path
 
 from macblock.colors import info, success
 from macblock.constants import (
+    APP_LABEL,
     DEFAULT_BLOCKLIST_SOURCE,
     SYSTEM_BLACKLIST_FILE,
     SYSTEM_BLOCKLIST_FILE,
@@ -16,6 +17,7 @@ from macblock.constants import (
     VAR_DB_DNSMASQ_PID,
     BLOCKLIST_SOURCES,
 )
+from macblock.launchd import kickstart, service_exists
 from macblock.errors import MacblockError
 from macblock.exec import run
 from macblock.fs import atomic_write_text
@@ -120,15 +122,18 @@ def _download(url: str, *, expected_sha256: str | None = None) -> str:
 
 
 def reload_dnsmasq() -> None:
+    label = f"{APP_LABEL}.dnsmasq"
+    if service_exists(label):
+        kickstart(label)
+        return
+
     if VAR_DB_DNSMASQ_PID.exists():
         try:
             pid = int(VAR_DB_DNSMASQ_PID.read_text(encoding="utf-8").strip())
         except Exception:
             pid = 0
         if pid > 1:
-            r = run(["/bin/kill", "-HUP", str(pid)])
-            if r.returncode == 0:
-                return
+            run(["/bin/kill", "-HUP", str(pid)])
 
 
 def update_blocklist(source: str | None = None, sha256: str | None = None) -> int:
