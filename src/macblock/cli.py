@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import sys
 
 sys.dont_write_bytecode = True
@@ -79,14 +81,36 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _require_root(cmd: str, args: argparse.Namespace) -> None:
+def _needs_root(cmd: str, args: argparse.Namespace) -> bool:
     if cmd in {"install", "uninstall", "enable", "disable", "pause", "resume", "update", "allow", "deny"}:
-        if not is_root():
-            raise PrivilegeError(f"Command '{cmd}' requires root (try: sudo macblock {cmd} ...)")
+        return True
 
-    if cmd == "sources" and getattr(args, "sources_cmd", None) == "set":
-        if not is_root():
-            raise PrivilegeError("Command 'sources set' requires root (try: sudo macblock sources set ...)")
+    return cmd == "sources" and getattr(args, "sources_cmd", None) == "set"
+
+
+def _exec_sudo(argv: list[str]) -> None:
+    sudo = shutil.which("sudo")
+    if sudo is None:
+        raise PrivilegeError("sudo not found")
+
+    if os.environ.get("MACBLOCK_ELEVATED") == "1":
+        raise PrivilegeError("failed to elevate privileges")
+
+    env = dict(os.environ)
+    env["MACBLOCK_ELEVATED"] = "1"
+
+    exe = shutil.which(sys.argv[0])
+    if exe:
+        os.execve(sudo, [sudo, "-E", exe, *argv], env)
+
+    os.execve(sudo, [sudo, "-E", sys.executable, "-m", "macblock", *argv], env)
+
+
+def _ensure_root(cmd: str, args: argparse.Namespace, argv: list[str]) -> None:
+    if is_root() or not _needs_root(cmd, args):
+        return
+
+    _exec_sudo(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -96,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         require_macos()
         parser = build_parser()
         args = parser.parse_args(argv)
-        _require_root(args.cmd, args)
+        _ensure_root(args.cmd, args, argv)
 
         if args.cmd == "status":
             return show_status()
