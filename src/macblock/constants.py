@@ -26,7 +26,9 @@ SYSTEM_DNS_EXCLUDE_SERVICES_FILE = SYSTEM_SUPPORT_DIR / "dns.exclude_services"
 
 VAR_DB_DIR = Path("/var/db") / APP_NAME
 VAR_DB_UPSTREAM_CONF = VAR_DB_DIR / "upstream.conf"
-VAR_DB_DNSMASQ_PID = VAR_DB_DIR / "dnsmasq.pid"
+
+VAR_DB_DNSMASQ_DIR = VAR_DB_DIR / "dnsmasq"
+VAR_DB_DNSMASQ_PID = VAR_DB_DNSMASQ_DIR / "dnsmasq.pid"
 
 SYSTEM_LOG_DIR = Path("/Library/Logs") / APP_NAME
 

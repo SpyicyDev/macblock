@@ -23,6 +23,8 @@ from macblock.constants import (
     SYSTEM_STATE_FILE,
     SYSTEM_SUPPORT_DIR,
     SYSTEM_WHITELIST_FILE,
+    SYSTEM_LOG_DIR,
+    VAR_DB_DNSMASQ_DIR,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_DIR,
     VAR_DB_UPSTREAM_CONF,
@@ -105,10 +107,11 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
             "DNSMASQ_BIN": dnsmasq_bin,
             "DNSMASQ_CONF": str(SYSTEM_DNSMASQ_CONF),
             "DNSMASQ_USER": DNSMASQ_USER,
-            "DNSMASQ_STDOUT": str(VAR_DB_DIR / "dnsmasq.out.log"),
-            "DNSMASQ_STDERR": str(VAR_DB_DIR / "dnsmasq.err.log"),
+            "DNSMASQ_STDOUT": str(SYSTEM_LOG_DIR / "dnsmasq.out.log"),
+            "DNSMASQ_STDERR": str(SYSTEM_LOG_DIR / "dnsmasq.err.log"),
         },
     )
+
 
     upstreams_plist = (
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
@@ -125,9 +128,9 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
         "  <key>StartInterval</key>\n"
         "  <integer>30</integer>\n"
         "  <key>StandardOutPath</key>\n"
-        f"  <string>{VAR_DB_DIR / 'upstreams.out.log'}</string>\n"
+        f"  <string>{SYSTEM_LOG_DIR / 'upstreams.out.log'}</string>\n"
         "  <key>StandardErrorPath</key>\n"
-        f"  <string>{VAR_DB_DIR / 'upstreams.err.log'}</string>\n"
+        f"  <string>{SYSTEM_LOG_DIR / 'upstreams.err.log'}</string>\n"
         "  <key>RunAtLoad</key>\n"
         "  <true/>\n"
         "</dict>\n"
@@ -149,9 +152,9 @@ def _write_launchd_plists(dnsmasq_bin: str) -> None:
         "  <key>StartInterval</key>\n"
         "  <integer>30</integer>\n"
         "  <key>StandardOutPath</key>\n"
-        f"  <string>{VAR_DB_DIR / 'state.out.log'}</string>\n"
+        f"  <string>{SYSTEM_LOG_DIR / 'state.out.log'}</string>\n"
         "  <key>StandardErrorPath</key>\n"
-        f"  <string>{VAR_DB_DIR / 'state.err.log'}</string>\n"
+        f"  <string>{SYSTEM_LOG_DIR / 'state.err.log'}</string>\n"
         "  <key>RunAtLoad</key>\n"
         "  <true/>\n"
         "</dict>\n"
@@ -210,13 +213,17 @@ def do_install(force: bool = False) -> int:
     ensure_dir(SYSTEM_SUPPORT_DIR, mode=0o755)
     ensure_dir(SYSTEM_CONFIG_DIR, mode=0o755)
     ensure_dir(SYSTEM_BIN_DIR, mode=0o755)
+    ensure_dir(SYSTEM_LOG_DIR, mode=0o755)
     ensure_dir(VAR_DB_DIR, mode=0o755)
+    ensure_dir(VAR_DB_DNSMASQ_DIR, mode=0o755)
 
     os.chown(SYSTEM_SUPPORT_DIR, 0, 0)
     os.chown(SYSTEM_CONFIG_DIR, 0, 0)
     os.chown(SYSTEM_BIN_DIR, 0, 0)
+    os.chown(SYSTEM_LOG_DIR, 0, 0)
+    os.chown(VAR_DB_DIR, 0, 0)
 
-    _chown(VAR_DB_DIR, DNSMASQ_USER)
+    _chown(VAR_DB_DNSMASQ_DIR, DNSMASQ_USER)
 
     if not SYSTEM_WHITELIST_FILE.exists():
         atomic_write_text(SYSTEM_WHITELIST_FILE, "", mode=0o644)
@@ -235,8 +242,9 @@ def do_install(force: bool = False) -> int:
         os.chown(SYSTEM_RAW_BLOCKLIST_FILE, 0, 0)
 
     if not VAR_DB_UPSTREAM_CONF.exists():
-        atomic_write_text(VAR_DB_UPSTREAM_CONF, "\n", mode=0o644)
-        _chown(VAR_DB_UPSTREAM_CONF, DNSMASQ_USER)
+        atomic_write_text(VAR_DB_UPSTREAM_CONF, "server=1.1.1.1\nserver=8.8.8.8\n", mode=0o644)
+
+    os.chown(VAR_DB_UPSTREAM_CONF, 0, 0)
 
     atomic_write_text(SYSTEM_DNSMASQ_CONF, render_dnsmasq_conf(), mode=0o644)
     os.chown(SYSTEM_DNSMASQ_CONF, 0, 0)
@@ -355,15 +363,20 @@ def do_uninstall(force: bool = False) -> int:
         if p.exists():
             p.unlink()
 
-    for p in [VAR_DB_DNSMASQ_PID, VAR_DB_UPSTREAM_CONF]:
+    for p in [
+        VAR_DB_DNSMASQ_PID,
+        VAR_DB_DNSMASQ_DIR / "dnsmasq.log",
+        VAR_DB_UPSTREAM_CONF,
+    ]:
         if p.exists():
             p.unlink()
 
-    if VAR_DB_DIR.exists():
-        try:
-            VAR_DB_DIR.rmdir()
-        except Exception:
-            pass
+    for d in [VAR_DB_DNSMASQ_DIR, VAR_DB_DIR]:
+        if d.exists():
+            try:
+                d.rmdir()
+            except Exception:
+                pass
 
     for p in [
         SYSTEM_DNSMASQ_CONF,
@@ -373,11 +386,17 @@ def do_uninstall(force: bool = False) -> int:
         SYSTEM_BLACKLIST_FILE,
         SYSTEM_STATE_FILE,
         SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
+        SYSTEM_LOG_DIR / "dnsmasq.out.log",
+        SYSTEM_LOG_DIR / "dnsmasq.err.log",
+        SYSTEM_LOG_DIR / "upstreams.out.log",
+        SYSTEM_LOG_DIR / "upstreams.err.log",
+        SYSTEM_LOG_DIR / "state.out.log",
+        SYSTEM_LOG_DIR / "state.err.log",
     ]:
         if p.exists():
             p.unlink()
 
-    for d in [SYSTEM_BIN_DIR, SYSTEM_CONFIG_DIR, SYSTEM_SUPPORT_DIR]:
+    for d in [SYSTEM_BIN_DIR, SYSTEM_CONFIG_DIR, SYSTEM_LOG_DIR, SYSTEM_SUPPORT_DIR]:
         if d.exists():
             try:
                 d.rmdir()
