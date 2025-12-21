@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ipaddress
 import os
 import re
 from collections.abc import Iterator
@@ -14,12 +13,12 @@ from macblock.constants import (
     DNSMASQ_LISTEN_ADDR,
     DNSMASQ_LISTEN_ADDR_V6,
     DNSMASQ_LISTEN_PORT,
+    DNSMASQ_QUERY_PORT,
     DNSMASQ_USER,
     PF_ANCHOR_FILE,
     PF_CONF,
     PF_EXCLUDE_INTERFACES_FILE,
     PF_LOCK_FILE,
-    VAR_DB_UPSTREAM_CONF,
 )
 from macblock.errors import MacblockError
 from macblock.exec import run
@@ -63,70 +62,24 @@ def _read_excluded_interfaces() -> list[str]:
     return out
 
 
-def _read_upstream_nameserver_ips() -> tuple[list[str], list[str]]:
-    if not VAR_DB_UPSTREAM_CONF.exists():
-        return [], []
-
-    v4: set[str] = set()
-    v6: set[str] = set()
-
-    for raw in VAR_DB_UPSTREAM_CONF.read_text(encoding="utf-8").splitlines():
-        s = raw.strip()
-        if not s or s.startswith("#"):
-            continue
-        if not s.startswith("server="):
-            continue
-
-        value = s[len("server=") :].strip()
-        if not value:
-            continue
-
-        if value.startswith("/"):
-            parts = [p for p in value.split("/") if p]
-            if not parts:
-                continue
-            candidate = parts[-1]
-        else:
-            candidate = value
-
-        candidate = candidate.split("#", 1)[0].split("@", 1)[0].strip()
-        if not candidate:
-            continue
-
-        try:
-            ip = ipaddress.ip_address(candidate)
-        except ValueError:
-            continue
-
-        if ip.version == 4:
-            v4.add(str(ip))
-        else:
-            v6.add(str(ip))
-
-    return sorted(v4), sorted(v6)
-
-
 def render_anchor_rules() -> str:
     port = DNSMASQ_LISTEN_PORT
+    query_port = DNSMASQ_QUERY_PORT
     excluded = _read_excluded_interfaces()
-    upstream_v4, upstream_v6 = _read_upstream_nameserver_ips()
 
     lines: list[str] = []
 
     for iface in excluded:
-        lines.append(f"no rdr on {iface} inet proto {{ udp tcp }} from any to any port 53")
-        lines.append(f"no rdr on {iface} inet6 proto {{ udp tcp }} from any to any port 53")
+        lines.append(f"no rdr on {iface} inet proto udp from any to any port 53")
+        lines.append(f"no rdr on {iface} inet6 proto udp from any to any port 53")
 
-    for ip in upstream_v4:
-        lines.append(f"no rdr on egress inet proto {{ udp tcp }} from any to {ip} port 53")
-
-    for ip in upstream_v6:
-        lines.append(f"no rdr on egress inet6 proto {{ udp tcp }} from any to {ip} port 53")
+    lines.append(f"no rdr on egress inet proto udp from any port {query_port} to any port 53")
+    lines.append(f"no rdr on egress inet6 proto udp from any port {query_port} to any port 53")
 
     lines.extend(
         [
-            f"rdr pass on egress inet proto {{ udp tcp }} from any to any port 53 -> {DNSMASQ_LISTEN_ADDR} port {port}",
-            f"rdr pass on egress inet6 proto {{ udp tcp }} from any to any port 53 -> {DNSMASQ_LISTEN_ADDR_V6} port {port}",
+            f"rdr pass on egress inet proto udp from any to any port 53 -> {DNSMASQ_LISTEN_ADDR} port {port}",
+            f"rdr pass on egress inet6 proto udp from any to any port 53 -> {DNSMASQ_LISTEN_ADDR_V6} port {port}",
         ]
     )
 

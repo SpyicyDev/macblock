@@ -18,6 +18,7 @@ class TestPf(unittest.TestCase):
         self.assertIn("rdr pass on egress inet6", rules)
         self.assertIn("port 53", rules)
         self.assertNotIn("user !=", rules)
+        self.assertIn(f"no rdr on egress inet proto udp from any port {pf.DNSMASQ_QUERY_PORT} to any port 53", rules)
 
     def test_render_anchor_rules_includes_no_rdr_for_excluded_interfaces(self):
         with tempfile.TemporaryDirectory() as d:
