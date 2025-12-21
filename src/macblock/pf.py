@@ -93,42 +93,77 @@ def write_anchor_file() -> None:
 
 
 def _with_pf_block(conf_text: str) -> str:
-    block = "\n".join(
-        [
-            _MARKER_BEGIN,
-            f"rdr-anchor \"{APP_LABEL}\"",
-            f"anchor \"{APP_LABEL}\"",
-            f"load anchor \"{APP_LABEL}\" from \"{PF_ANCHOR_FILE}\"",
-            _MARKER_END,
-        ]
-    )
+    target_line = f"rdr-anchor \"{APP_LABEL}\""
 
-    if _MARKER_BEGIN in conf_text and _MARKER_END in conf_text:
-        start = conf_text.index(_MARKER_BEGIN)
-        end = conf_text.index(_MARKER_END) + len(_MARKER_END)
-        new_text = conf_text[:start] + block + conf_text[end:]
-        if not new_text.endswith("\n"):
-            new_text += "\n"
-        return new_text
+    block_insert = [
+        f"{_MARKER_BEGIN}\n",
+        f"{target_line}\n",
+        f"{_MARKER_END}\n",
+    ]
 
-    if not conf_text.endswith("\n"):
-        conf_text += "\n"
-    return conf_text + "\n" + block + "\n"
+    base_text = conf_text
+    if _MARKER_BEGIN in base_text and _MARKER_END in base_text:
+        start = base_text.index(_MARKER_BEGIN)
+        end = base_text.index(_MARKER_END) + len(_MARKER_END)
+        if end < len(base_text) and base_text[end : end + 1] == "\n":
+            end += 1
+        base_text = (base_text[:start] + base_text[end:]).lstrip("\n")
+
+    if target_line in base_text:
+        if not base_text.endswith("\n"):
+            base_text += "\n"
+        return base_text
+
+    if not base_text.endswith("\n"):
+        base_text += "\n"
+
+    lines = base_text.splitlines(keepends=True)
+
+    filtering_re = re.compile(r"^(anchor|load\s+anchor|pass|block|match|antispoof)\b")
+    first_filtering_idx = len(lines)
+
+    for i, raw in enumerate(lines):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if filtering_re.match(stripped):
+            first_filtering_idx = i
+            break
+
+    insert_idx = first_filtering_idx
+
+    for i in range(first_filtering_idx - 1, -1, -1):
+        stripped = lines[i].strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("rdr-anchor"):
+            insert_idx = i + 1
+            break
+
+    new_lines = lines[:insert_idx] + block_insert + lines[insert_idx:]
+    new_text = "".join(new_lines)
+    if not new_text.endswith("\n"):
+        new_text += "\n"
+    return new_text
+
+
+def _ensure_pf_conf_block_locked() -> None:
+    st = PF_CONF.stat()
+    original = PF_CONF.read_text(encoding="utf-8")
+    new_text = _with_pf_block(original)
+    if new_text == original:
+        return
+
+    tmp = PF_CONF.with_suffix(PF_CONF.suffix + ".tmp")
+    tmp.write_text(new_text, encoding="utf-8")
+    os.chmod(tmp, st.st_mode)
+    os.chown(tmp, st.st_uid, st.st_gid)
+    tmp.replace(PF_CONF)
 
 
 def ensure_pf_conf_block() -> None:
     with _pf_lock():
-        st = PF_CONF.stat()
-        original = PF_CONF.read_text(encoding="utf-8")
-        new_text = _with_pf_block(original)
-        if new_text == original:
-            return
-
-        tmp = PF_CONF.with_suffix(PF_CONF.suffix + ".tmp")
-        tmp.write_text(new_text, encoding="utf-8")
-        os.chmod(tmp, st.st_mode)
-        os.chown(tmp, st.st_uid, st.st_gid)
-        tmp.replace(PF_CONF)
+        _ensure_pf_conf_block_locked()
 
 
 def remove_pf_conf_block() -> None:
@@ -161,15 +196,26 @@ def validate_pf_conf() -> None:
         _pfctl(["-nf", str(PF_CONF)])
 
 
+def _main_ruleset_has_rdr_anchor() -> bool:
+    r = run(["/sbin/pfctl", "-sr"])
+    if r.returncode != 0:
+        return False
+    return f"rdr-anchor \"{APP_LABEL}\"" in r.stdout
+
+
 def enable_anchor() -> None:
     with _pf_lock():
+        _ensure_pf_conf_block_locked()
+        _pfctl(["-nf", str(PF_CONF)])
         write_anchor_file()
 
         r = run(["/sbin/pfctl", "-E"])
         if r.returncode not in (0, 1):
             raise MacblockError(r.stderr.strip() or "pfctl -E failed")
 
-        _pfctl(["-f", str(PF_CONF)])
+        if not _main_ruleset_has_rdr_anchor():
+            _pfctl(["-f", str(PF_CONF)])
+
         _pfctl(["-a", APP_LABEL, "-f", str(PF_ANCHOR_FILE)])
 
 
