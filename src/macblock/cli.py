@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import shutil
 import sys
@@ -34,6 +35,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status", help="Show status")
     sub.add_parser("doctor", help="Run diagnostics")
+
+    p_logs = sub.add_parser("logs", help="Show logs")
+    p_logs.add_argument("--component", choices=["daemon", "dnsmasq"], default="daemon")
+    p_logs.add_argument("--lines", type=int, default=200)
+    p_logs.add_argument("--follow", action="store_true")
+    p_logs.add_argument("--stderr", action="store_true")
 
     p_install = sub.add_parser("install", help="Install system integration (root)")
     p_install.add_argument("--force", action="store_true")
@@ -126,6 +133,14 @@ def main(argv: list[str] | None = None) -> int:
             return show_status()
         if args.cmd == "doctor":
             return run_diagnostics()
+        if args.cmd == "logs":
+            show_logs = importlib.import_module("macblock.logs").show_logs
+            return show_logs(
+                component=str(args.component),
+                lines=int(args.lines),
+                follow=bool(args.follow),
+                stderr=bool(args.stderr),
+            )
         if args.cmd == "install":
             return do_install(force=bool(args.force))
         if args.cmd == "uninstall":
