@@ -83,6 +83,15 @@ def run_diagnostics() -> int:
 
     st = load_state(SYSTEM_STATE_FILE)
 
+    if VAR_DB_UPSTREAM_CONF.exists():
+        try:
+            upstream_text = VAR_DB_UPSTREAM_CONF.read_text(encoding="utf-8")
+        except Exception:
+            upstream_text = ""
+        if "server=" not in upstream_text:
+            ok_all = False
+            print(error("upstream.conf has no upstream servers; restart macblock upstreams job"))
+
     pid_ok = False
     pid = None
     if VAR_DB_DNSMASQ_PID.exists():

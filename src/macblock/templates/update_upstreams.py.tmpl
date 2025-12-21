@@ -213,6 +213,28 @@ def main() -> int:
             if ip not in defaults:
                 defaults.append(ip)
 
+    dns_backup = data.get("dns_backup")
+    if isinstance(dns_backup, dict):
+        managed_services = data.get("managed_services")
+        managed = managed_services if isinstance(managed_services, list) else []
+
+        for service in managed:
+            if not isinstance(service, str) or not service:
+                continue
+            cfg = dns_backup.get(service)
+            if not isinstance(cfg, dict):
+                continue
+            servers = cfg.get("dns")
+            if not isinstance(servers, list):
+                continue
+            for ip in servers:
+                if not isinstance(ip, str) or not ip:
+                    continue
+                if ip == "127.0.0.1":
+                    continue
+                if ip not in defaults:
+                    defaults.append(ip)
+
     r = run(["/usr/sbin/scutil", "--dns"])
     if r.returncode != 0:
         return r.returncode
