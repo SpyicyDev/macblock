@@ -25,6 +25,7 @@ from macblock.constants import (
     SYSTEM_SUPPORT_DIR,
     SYSTEM_WHITELIST_FILE,
     SYSTEM_LOG_DIR,
+    VAR_DB_DAEMON_PID,
     VAR_DB_DNSMASQ_DIR,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_DIR,
@@ -86,6 +87,7 @@ def _write_helpers() -> None:
         "SYSTEM_STATE_FILE": str(SYSTEM_STATE_FILE),
         "UPSTREAM_OUT": str(VAR_DB_UPSTREAM_CONF),
         "DNSMASQ_PID_FILE": str(VAR_DB_DNSMASQ_PID),
+        "DAEMON_PID_FILE": str(VAR_DB_DAEMON_PID),
         "DNS_EXCLUDE_SERVICES_FILE": str(SYSTEM_DNS_EXCLUDE_SERVICES_FILE),
         "RESOLVER_DIR": str(SYSTEM_RESOLVER_DIR),
     }
@@ -343,6 +345,7 @@ def do_uninstall(force: bool = False) -> int:
         VAR_DB_DNSMASQ_PID,
         VAR_DB_DNSMASQ_DIR / "dnsmasq.log",
         VAR_DB_UPSTREAM_CONF,
+        VAR_DB_DAEMON_PID,
     ]:
         if p.exists():
             p.unlink()

@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import os
+import signal
 import time
 
 from macblock.colors import print_success
 from macblock.constants import (
     APP_LABEL,
-    LAUNCHD_DIR,
+    LAUNCHD_DAEMON_PLIST,
     LAUNCHD_DNSMASQ_PLIST,
     SYSTEM_STATE_FILE,
+    VAR_DB_DAEMON_PID,
 )
 from macblock.errors import MacblockError
-from macblock.launchd import bootstrap_system, enable_service, kickstart
+from macblock.launchd import kickstart
 from macblock.state import load_state, replace_state, save_state_atomic
 
 
@@ -25,34 +28,36 @@ def _parse_duration_seconds(value: str) -> int:
     raise ValueError("duration must end with m/h/d")
 
 
-def _ensure_daemon(plist, label: str) -> None:
-    try:
-        bootstrap_system(plist)
-    except Exception:
-        pass
-
-    try:
-        enable_service(label)
-    except Exception:
-        pass
-
-    try:
-        kickstart(label)
-    except Exception:
-        pass
-
-
-def _ensure_daemons() -> None:
-    daemon_plist = LAUNCHD_DIR / f"{APP_LABEL}.daemon.plist"
-
-    if not LAUNCHD_DNSMASQ_PLIST.exists() or not daemon_plist.exists():
+def _check_installed() -> None:
+    if not LAUNCHD_DNSMASQ_PLIST.exists() or not LAUNCHD_DAEMON_PLIST.exists():
         raise MacblockError("macblock is not installed; run: sudo macblock install")
 
-    _ensure_daemon(LAUNCHD_DNSMASQ_PLIST, f"{APP_LABEL}.dnsmasq")
-    _ensure_daemon(daemon_plist, f"{APP_LABEL}.daemon")
+
+def _signal_daemon() -> bool:
+    if not VAR_DB_DAEMON_PID.exists():
+        return False
+
+    try:
+        pid = int(VAR_DB_DAEMON_PID.read_text(encoding="utf-8").strip())
+    except Exception:
+        return False
+
+    if pid <= 1:
+        return False
+
+    try:
+        os.kill(pid, signal.SIGUSR1)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return False
 
 
-def _kickstart_daemon() -> None:
+def _trigger_daemon() -> None:
+    if _signal_daemon():
+        return
+
     try:
         kickstart(f"{APP_LABEL}.daemon")
     except Exception:
@@ -60,35 +65,35 @@ def _kickstart_daemon() -> None:
 
 
 def do_enable() -> int:
-    _ensure_daemons()
+    _check_installed()
     st = load_state(SYSTEM_STATE_FILE)
 
     save_state_atomic(
         SYSTEM_STATE_FILE,
         replace_state(st, enabled=True, resume_at_epoch=None),
     )
-    _kickstart_daemon()
+    _trigger_daemon()
 
     print_success("enabled")
     return 0
 
 
 def do_disable() -> int:
-    _ensure_daemons()
+    _check_installed()
     st = load_state(SYSTEM_STATE_FILE)
 
     save_state_atomic(
         SYSTEM_STATE_FILE,
         replace_state(st, enabled=False, resume_at_epoch=None),
     )
-    _kickstart_daemon()
+    _trigger_daemon()
 
     print_success("disabled")
     return 0
 
 
 def do_pause(duration: str) -> int:
-    _ensure_daemons()
+    _check_installed()
     seconds = _parse_duration_seconds(duration)
     resume_at = int(time.time()) + seconds
 
@@ -97,21 +102,21 @@ def do_pause(duration: str) -> int:
         SYSTEM_STATE_FILE,
         replace_state(st, enabled=True, resume_at_epoch=resume_at),
     )
-    _kickstart_daemon()
+    _trigger_daemon()
 
     print_success("paused")
     return 0
 
 
 def do_resume() -> int:
-    _ensure_daemons()
+    _check_installed()
     st = load_state(SYSTEM_STATE_FILE)
 
     save_state_atomic(
         SYSTEM_STATE_FILE,
         replace_state(st, enabled=True, resume_at_epoch=None),
     )
-    _kickstart_daemon()
+    _trigger_daemon()
 
     print_success("resumed")
     return 0

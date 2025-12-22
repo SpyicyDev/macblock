@@ -2,13 +2,22 @@
 
 import ipaddress
 import json
+import os
 import re
+import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 EXPECTED_SCHEMA_VERSION = 2
+
+_trigger_apply = False
+
+
+def _handle_sigusr1(signum, frame):
+    global _trigger_apply
+    _trigger_apply = True
 
 
 def run(cmd: list[str], *, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
@@ -436,20 +445,38 @@ def seconds_until_next_event(state: dict) -> float | None:
 
 
 def main() -> int:
+    global _trigger_apply
+
     state_path = Path("{{SYSTEM_STATE_FILE}}")
     upstream_out = Path("{{UPSTREAM_OUT}}")
     dnsmasq_pid = Path("{{DNSMASQ_PID_FILE}}")
+    daemon_pid_path = Path("{{DAEMON_PID_FILE}}")
 
-    while True:
-        apply_state(state_path, upstream_out, dnsmasq_pid)
+    signal.signal(signal.SIGUSR1, _handle_sigusr1)
 
-        state = load_state(state_path)
-        timeout = seconds_until_next_event(state)
+    daemon_pid_path.parent.mkdir(parents=True, exist_ok=True)
+    daemon_pid_path.write_text(str(os.getpid()) + "\n", encoding="utf-8")
 
+    try:
+        while True:
+            _trigger_apply = False
+            apply_state(state_path, upstream_out, dnsmasq_pid)
+
+            state = load_state(state_path)
+            timeout = seconds_until_next_event(state)
+
+            try:
+                run(["/usr/bin/notifyutil", "-w", "com.apple.system.config.network_change"], timeout=timeout)
+            except subprocess.TimeoutExpired:
+                pass
+
+            if _trigger_apply:
+                continue
+    finally:
         try:
-            run(["/usr/bin/notifyutil", "-w", "com.apple.system.config.network_change"], timeout=timeout)
-        except subprocess.TimeoutExpired:
-            continue
+            daemon_pid_path.unlink()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

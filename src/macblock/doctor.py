@@ -17,6 +17,7 @@ from macblock.constants import (
     SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
     SYSTEM_RAW_BLOCKLIST_FILE,
     SYSTEM_STATE_FILE,
+    VAR_DB_DAEMON_PID,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )
@@ -127,6 +128,26 @@ def run_diagnostics() -> int:
     if pid_ok and not _tcp_connect_ok(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT):
         ok_all = False
         print(error(f"dnsmasq not listening on {DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT}"))
+
+    daemon_pid = None
+    daemon_pid_ok = False
+    if VAR_DB_DAEMON_PID.exists():
+        try:
+            daemon_pid = int(VAR_DB_DAEMON_PID.read_text(encoding="utf-8").strip())
+        except Exception:
+            daemon_pid = None
+
+    if daemon_pid is not None and daemon_pid > 1:
+        r_ps = run(["/bin/ps", "-p", str(daemon_pid)])
+        daemon_pid_ok = r_ps.returncode == 0
+
+    if daemon_pid is None:
+        print(warning(f"macblockd pid-file missing: {VAR_DB_DAEMON_PID}"))
+    elif not daemon_pid_ok:
+        ok_all = False
+        print(error(f"macblockd pid not running: {daemon_pid}"))
+    else:
+        print(info("macblockd pid: ") + success(str(daemon_pid)))
 
     now = int(time.time())
     paused = st.resume_at_epoch is not None and st.resume_at_epoch > now
