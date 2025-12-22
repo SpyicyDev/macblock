@@ -119,7 +119,7 @@ def replace_state(st: State, **updates: Any) -> State:
         "blocklist_source": st.blocklist_source,
         "dns_backup": st.dns_backup,
         "managed_services": st.managed_services,
-        "resolver_domains": st.resolver_domains,
+        "resolver_domains": [],
     }
     payload.update(updates)
     return State(**payload)
@@ -135,7 +135,6 @@ def save_state_atomic(path: Path, state: State) -> None:
         "blocklist_source": state.blocklist_source,
         "dns_backup": state.dns_backup,
         "managed_services": state.managed_services,
-        "resolver_domains": state.resolver_domains,
     }
 
     tmp = path.with_suffix(path.suffix + ".tmp")

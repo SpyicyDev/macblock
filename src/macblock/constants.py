@@ -35,6 +35,8 @@ SYSTEM_LOG_DIR = Path("/Library/Logs") / APP_NAME
 LAUNCHD_DIR = Path("/Library/LaunchDaemons")
 LAUNCHD_DNSMASQ_PLIST = LAUNCHD_DIR / f"{APP_LABEL}.dnsmasq.plist"
 LAUNCHD_DAEMON_PLIST = LAUNCHD_DIR / f"{APP_LABEL}.daemon.plist"
+
+# Legacy plist paths - kept only for uninstall cleanup of old installations
 LAUNCHD_UPSTREAMS_PLIST = LAUNCHD_DIR / f"{APP_LABEL}.upstreams.plist"
 LAUNCHD_STATE_PLIST = LAUNCHD_DIR / f"{APP_LABEL}.state.plist"
 

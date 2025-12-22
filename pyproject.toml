@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "macblock"
 version = "0.0.0"
-description = "Local DNS sinkhole for macOS (dnsmasq + PF)"
+description = "Local DNS sinkhole for macOS using dnsmasq"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "macblock contributors" }]
-keywords = ["dns", "macblock", "dnsmasq", "macos", "pf"]
+keywords = ["dns", "ad-blocker", "dnsmasq", "macos"]
 dependencies = []
 
 [dependency-groups]
