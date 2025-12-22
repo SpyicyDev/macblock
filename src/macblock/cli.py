@@ -5,8 +5,6 @@ import os
 import shutil
 import sys
 
-sys.dont_write_bytecode = True
-
 from macblock import __version__
 from macblock.errors import MacblockError, PrivilegeError, UnsupportedPlatformError
 from macblock.install import do_install, do_uninstall

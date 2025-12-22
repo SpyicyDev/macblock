@@ -27,7 +27,7 @@ jobs:
         run: uv run ruff format --check src/macblock tests
 
       - name: Lint
-        run: uv run ruff check src/macblock tests --ignore E402
+        run: uv run ruff check src/macblock tests
 
       - name: Type check
         run: uv run pyright src/macblock
