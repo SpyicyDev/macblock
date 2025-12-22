@@ -11,6 +11,7 @@ from macblock.constants import (
     DNSMASQ_LISTEN_PORT,
     LAUNCHD_DIR,
     LAUNCHD_DNSMASQ_PLIST,
+    SYSTEM_BIN_DIR,
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_DNSMASQ_CONF,
     SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
@@ -54,6 +55,7 @@ def run_diagnostics() -> int:
     print(bold("macblock doctor"))
 
     daemon_plist = LAUNCHD_DIR / f"{APP_LABEL}.daemon.plist"
+    macblockd_bin = SYSTEM_BIN_DIR / "macblockd.py"
 
     checks = [
         ("state", SYSTEM_STATE_FILE),
@@ -62,6 +64,7 @@ def run_diagnostics() -> int:
         ("blocklist.conf", SYSTEM_BLOCKLIST_FILE),
         ("upstream.conf", VAR_DB_UPSTREAM_CONF),
         ("dns.exclude_services", SYSTEM_DNS_EXCLUDE_SERVICES_FILE),
+        ("macblockd.py", macblockd_bin),
         ("plist dnsmasq", LAUNCHD_DNSMASQ_PLIST),
         ("plist daemon", daemon_plist),
     ]
