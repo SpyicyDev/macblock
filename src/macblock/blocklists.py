@@ -5,7 +5,6 @@ import re
 import urllib.request
 from pathlib import Path
 
-from macblock.colors import print_info, print_success, print_warning
 from macblock.constants import (
     APP_LABEL,
     DEFAULT_BLOCKLIST_SOURCE,
@@ -22,6 +21,17 @@ from macblock.errors import MacblockError
 from macblock.exec import run
 from macblock.fs import atomic_write_text
 from macblock.state import load_state, replace_state, save_state_atomic
+from macblock.ui import (
+    dim,
+    green,
+    header,
+    result_success,
+    result_warn,
+    Spinner,
+    step_done,
+    step_warn,
+    SYMBOL_ACTIVE,
+)
 
 
 _domain_re = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$", re.IGNORECASE)
@@ -140,9 +150,13 @@ def list_blocklist_sources() -> int:
     st = load_state(SYSTEM_STATE_FILE)
     current = st.blocklist_source or DEFAULT_BLOCKLIST_SOURCE
 
+    print()
     for key in sorted(BLOCKLIST_SOURCES.keys()):
-        marker = "*" if key == current else " "
-        print(f"{marker} {key} - {BLOCKLIST_SOURCES[key]['name']}")
+        if key == current:
+            print(f"  {green(SYMBOL_ACTIVE)} {green(key)} - {BLOCKLIST_SOURCES[key]['name']}")
+        else:
+            print(f"    {key} - {dim(str(BLOCKLIST_SOURCES[key]['name']))}")
+    print()
 
     return 0
 
@@ -162,7 +176,8 @@ def set_blocklist_source(source: str) -> int:
         replace_state(st, blocklist_source=src),
     )
 
-    print_success(f"blocklist source set: {src}")
+    step_done(f"Blocklist source set to {src}")
+    print()
     return 0
 
 
@@ -172,35 +187,63 @@ def update_blocklist(source: str | None = None, sha256: str | None = None) -> in
 
     if chosen.startswith("https://"):
         url = chosen
+        source_name = "custom URL"
     elif chosen in BLOCKLIST_SOURCES:
         url = str(BLOCKLIST_SOURCES[chosen]["url"])
+        source_name = chosen
     else:
         raise MacblockError("unknown source")
 
-    print_info(f"downloading: {url}")
-    raw = _download(url, expected_sha256=sha256)
+    print()
 
-    if not raw.strip():
-        raise MacblockError("downloaded blocklist is empty")
+    # Download with spinner
+    with Spinner(f"Downloading blocklist ({source_name})") as spinner:
+        try:
+            raw = _download(url, expected_sha256=sha256)
+        except Exception as e:
+            spinner.fail(f"Download failed: {e}")
+            raise
 
-    head = raw.lstrip()[:200].lower()
-    if head.startswith("<!doctype html") or head.startswith("<html") or "<html" in head:
-        raise MacblockError("downloaded blocklist looks like HTML")
+        if not raw.strip():
+            spinner.fail("Downloaded blocklist is empty")
+            raise MacblockError("downloaded blocklist is empty")
 
-    count_raw = len(_parse_hosts_domains(raw))
-    if count_raw < 1000:
-        print_warning(f"downloaded blocklist looks small ({count_raw} domains)")
+        head = raw.lstrip()[:200].lower()
+        if head.startswith("<!doctype html") or head.startswith("<html") or "<html" in head:
+            spinner.fail("Downloaded file looks like HTML, not a blocklist")
+            raise MacblockError("downloaded blocklist looks like HTML")
 
-    atomic_write_text(SYSTEM_RAW_BLOCKLIST_FILE, raw, mode=0o644)
+        spinner.succeed("Downloaded blocklist")
 
-    count = compile_blocklist(SYSTEM_RAW_BLOCKLIST_FILE, SYSTEM_WHITELIST_FILE, SYSTEM_BLACKLIST_FILE, SYSTEM_BLOCKLIST_FILE)
+    # Parse and compile
+    with Spinner("Compiling blocklist") as spinner:
+        count_raw = len(_parse_hosts_domains(raw))
+        if count_raw < 1000:
+            spinner.warn(f"Blocklist looks small ({count_raw} domains)")
+        else:
+            atomic_write_text(SYSTEM_RAW_BLOCKLIST_FILE, raw, mode=0o644)
+            count = compile_blocklist(
+                SYSTEM_RAW_BLOCKLIST_FILE,
+                SYSTEM_WHITELIST_FILE,
+                SYSTEM_BLACKLIST_FILE,
+                SYSTEM_BLOCKLIST_FILE,
+            )
+            spinner.succeed(f"Compiled {count:,} domains")
 
+    # Save state
     save_state_atomic(
         SYSTEM_STATE_FILE,
         replace_state(st, blocklist_source=chosen),
     )
 
-    reload_dnsmasq()
+    # Reload dnsmasq
+    with Spinner("Reloading dnsmasq") as spinner:
+        try:
+            reload_dnsmasq()
+            spinner.succeed("Reloaded dnsmasq")
+        except Exception:
+            spinner.warn("Could not reload dnsmasq (may need restart)")
 
-    print_success(f"blocklist entries: {count}")
+    result_success(f"Blocklist updated: {count:,} domains blocked")
+    print()
     return 0

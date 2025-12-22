@@ -1,75 +1,151 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime
 
-from macblock.colors import bold, dim, error, info, success
 from macblock.constants import (
     APP_LABEL,
     LAUNCHD_DIR,
     LAUNCHD_DNSMASQ_PLIST,
-    SYSTEM_DNSMASQ_CONF,
-    SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
+    SYSTEM_BLOCKLIST_FILE,
     SYSTEM_STATE_FILE,
+    VAR_DB_DAEMON_PID,
     VAR_DB_DNSMASQ_PID,
-    VAR_DB_UPSTREAM_CONF,
 )
 from macblock.exec import run
 from macblock.state import load_state
 from macblock.system_dns import get_dns_servers
+from macblock.ui import (
+    bold,
+    dim,
+    dns_status,
+    green,
+    header,
+    red,
+    status_active,
+    status_err,
+    status_inactive,
+    status_info,
+    status_ok,
+    status_warn,
+    subheader,
+    yellow,
+    SYMBOL_OK,
+    SYMBOL_FAIL,
+)
 
 
-def _exists(path_str: str, ok: bool) -> str:
-    return success(path_str) if ok else error(path_str)
+def _read_pid(path) -> int | None:
+    if not path.exists():
+        return None
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip())
+        return pid if pid > 1 else None
+    except Exception:
+        return None
+
+
+def _process_running(pid: int) -> bool:
+    if pid <= 1:
+        return False
+    try:
+        import os
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _get_blocklist_count() -> int:
+    if not SYSTEM_BLOCKLIST_FILE.exists():
+        return 0
+    try:
+        return len(SYSTEM_BLOCKLIST_FILE.read_text().splitlines())
+    except Exception:
+        return 0
 
 
 def show_status() -> int:
     st = load_state(SYSTEM_STATE_FILE)
 
-    print(bold("macblock status"))
+    header("📊", "macblock status")
 
-    print(f"label: {APP_LABEL}")
-    print(f"enabled: {success('true') if st.enabled else dim('false')}")
-    print(f"dnsmasq_conf: {_exists(str(SYSTEM_DNSMASQ_CONF), SYSTEM_DNSMASQ_CONF.exists())}")
-    print(f"dnsmasq_pid: {_exists(str(VAR_DB_DNSMASQ_PID), VAR_DB_DNSMASQ_PID.exists())}")
-    print(f"upstream_conf: {_exists(str(VAR_DB_UPSTREAM_CONF), VAR_DB_UPSTREAM_CONF.exists())}")
-    print(f"dns_exclude_services: {_exists(str(SYSTEM_DNS_EXCLUDE_SERVICES_FILE), SYSTEM_DNS_EXCLUDE_SERVICES_FILE.exists())}")
+    # Blocking status
+    now = int(time.time())
+    paused = st.resume_at_epoch is not None and st.resume_at_epoch > now
+
+    if st.enabled and not paused:
+        status_active("Blocking", "enabled")
+    elif st.enabled and paused:
+        remaining = st.resume_at_epoch - now if st.resume_at_epoch else 0
+        mins = remaining // 60
+        status_warn("Blocking", f"paused ({mins}m remaining)")
+    else:
+        status_inactive("Blocking", "disabled")
+
+    # Resume timer
+    if st.resume_at_epoch is not None:
+        when = datetime.fromtimestamp(st.resume_at_epoch)
+        status_info("Resume at", when.strftime("%H:%M:%S"))
+
+    # dnsmasq process
+    subheader("Services")
+
+    dnsmasq_pid = _read_pid(VAR_DB_DNSMASQ_PID)
+    if dnsmasq_pid and _process_running(dnsmasq_pid):
+        status_ok("dnsmasq", f"running (PID {dnsmasq_pid})")
+    else:
+        r = run(["/usr/bin/pgrep", "-x", "dnsmasq"])
+        if r.returncode == 0:
+            status_warn("dnsmasq", "running (not managed by macblock)")
+        else:
+            status_err("dnsmasq", "not running")
+
+    # Daemon process
+    daemon_pid = _read_pid(VAR_DB_DAEMON_PID)
+    if daemon_pid and _process_running(daemon_pid):
+        status_ok("daemon", f"running (PID {daemon_pid})")
+    else:
+        status_err("daemon", "not running")
+
+    # Blocklist
+    subheader("Blocklist")
+
+    count = _get_blocklist_count()
+    if count > 0:
+        status_ok("Domains", f"{count:,} blocked")
+    else:
+        status_err("Domains", "0 (run: sudo macblock update)")
+
+    source = st.blocklist_source or "stevenblack"
+    status_info("Source", source)
+
+    # DNS Configuration
+    if st.managed_services:
+        subheader("DNS Configuration")
+
+        is_blocking = st.enabled and not paused
+        for svc in st.managed_services:
+            servers = get_dns_servers(svc)
+            dns_status(svc, servers, is_active=True, is_blocking=is_blocking)
+
+    # Installation status
+    subheader("Installation")
 
     daemon_plist = LAUNCHD_DIR / f"{APP_LABEL}.daemon.plist"
+    dnsmasq_plist_exists = LAUNCHD_DNSMASQ_PLIST.exists()
+    daemon_plist_exists = daemon_plist.exists()
 
-    plists = [
-        (f"{APP_LABEL}.dnsmasq", LAUNCHD_DNSMASQ_PLIST),
-        (f"{APP_LABEL}.daemon", daemon_plist),
-    ]
-
-    for label, plist in plists:
-        print(f"launchd[{label}]: {_exists(str(plist), plist.exists())}")
-
-    if st.resume_at_epoch is None:
-        print("resume_at: " + dim(""))
+    if dnsmasq_plist_exists and daemon_plist_exists:
+        status_ok("Launchd", "installed")
+    elif dnsmasq_plist_exists or daemon_plist_exists:
+        status_warn("Launchd", "partially installed")
     else:
-        when = datetime.fromtimestamp(st.resume_at_epoch)
-        print(f"resume_at: {when.isoformat(sep=' ', timespec='seconds')}")
+        status_err("Launchd", "not installed")
 
-    if st.managed_services:
-        print()
-        print(info("managed services"))
-        for svc in st.managed_services:
-            cur = get_dns_servers(svc)
-            if cur is None:
-                cur_s = dim("dhcp")
-            else:
-                cur_s = ", ".join(cur)
-            print(f"{svc}: {cur_s}")
+    status_info("Label", APP_LABEL)
 
-    r = run(["/usr/bin/pgrep", "-x", "dnsmasq"])
-    if r.returncode == 0:
-        print()
-        if VAR_DB_DNSMASQ_PID.exists():
-            print("dnsmasq: " + success("running"))
-        else:
-            print("dnsmasq: " + error("running but macblock pid-file missing"))
-    else:
-        print()
-        print("dnsmasq: " + error("not running or not visible"))
-
+    print()
     return 0

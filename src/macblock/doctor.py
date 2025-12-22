@@ -6,7 +6,6 @@ import socket
 import time
 
 from macblock import __version__
-from macblock.colors import bold, error, info, success, warning
 from macblock.constants import (
     APP_LABEL,
     DNSMASQ_LISTEN_ADDR,
@@ -27,11 +26,29 @@ from macblock.constants import (
 from macblock.exec import run
 from macblock.state import load_state
 from macblock.system_dns import get_dns_servers
-
-
-def _check_file(path) -> tuple[bool, str]:
-    ok = path.exists()
-    return ok, str(path)
+from macblock.ui import (
+    bold,
+    cyan,
+    dim,
+    green,
+    header,
+    list_item,
+    list_item_fail,
+    list_item_ok,
+    list_item_warn,
+    red,
+    result_fail,
+    result_success,
+    status_err,
+    status_info,
+    status_ok,
+    status_warn,
+    subheader,
+    yellow,
+    SYMBOL_OK,
+    SYMBOL_FAIL,
+    SYMBOL_WARN,
+)
 
 
 def _tcp_connect_ok(host: str, port: int) -> bool:
@@ -44,9 +61,7 @@ def _tcp_connect_ok(host: str, port: int) -> bool:
         s.settimeout(0.3)
         s.connect((host, port))
         return True
-    except OSError as e:
-        if e.errno in {errno.ECONNREFUSED, errno.ETIMEDOUT, errno.EHOSTUNREACH, errno.ENETUNREACH}:
-            return False
+    except OSError:
         return False
     finally:
         try:
@@ -104,64 +119,63 @@ def _check_port_in_use(host: str, port: int) -> str | None:
 
 
 def run_diagnostics() -> int:
-    print(bold("macblock doctor"))
-    print()
+    header("🔍", "macblock doctor")
 
     daemon_plist = LAUNCHD_DIR / f"{APP_LABEL}.daemon.plist"
     issues: list[str] = []
     suggestions: list[str] = []
 
-    print(bold("Configuration Files"))
-    checks = [
+    # Version check
+    subheader("Version")
+    version_ok, installed_version = _check_version()
+    if not version_ok:
+        if installed_version is None:
+            status_err("Installed", "unknown")
+            status_info("CLI", __version__)
+            issues.append("version file missing")
+            suggestions.append("sudo macblock install --force")
+        else:
+            status_warn("Installed", installed_version)
+            status_info("CLI", __version__)
+            issues.append(f"version mismatch (installed={installed_version}, cli={__version__})")
+            suggestions.append("sudo macblock install --force")
+    else:
+        status_ok("Version", __version__)
+
+    # Configuration files
+    subheader("Configuration Files")
+    config_files = [
         ("state.json", SYSTEM_STATE_FILE),
-        ("version", SYSTEM_VERSION_FILE),
         ("dnsmasq.conf", SYSTEM_DNSMASQ_CONF),
         ("blocklist.raw", SYSTEM_RAW_BLOCKLIST_FILE),
         ("blocklist.conf", SYSTEM_BLOCKLIST_FILE),
         ("upstream.conf", VAR_DB_UPSTREAM_CONF),
-        ("dns.exclude_services", SYSTEM_DNS_EXCLUDE_SERVICES_FILE),
     ]
 
-    for name, path in checks:
-        ok, p = _check_file(path)
-        status = success("OK") if ok else error("MISSING")
-        print(f"  {name}: {status} ({p})")
-        if not ok:
+    for name, path in config_files:
+        if path.exists():
+            list_item_ok(f"{name}")
+        else:
+            list_item_fail(f"{name} {dim('(missing)')}")
             issues.append(f"{name} is missing")
 
-    print()
-    print(bold("Launchd Services"))
+    # Launchd services
+    subheader("Launchd Services")
     plist_checks = [
         ("dnsmasq", LAUNCHD_DNSMASQ_PLIST),
         ("daemon", daemon_plist),
     ]
 
     for name, plist in plist_checks:
-        ok, p = _check_file(plist)
-        status = success("OK") if ok else error("MISSING")
-        print(f"  {APP_LABEL}.{name}: {status}")
-        if not ok:
+        label = f"{APP_LABEL}.{name}"
+        if plist.exists():
+            list_item_ok(label)
+        else:
+            list_item_fail(f"{label} {dim('(not installed)')}")
             issues.append(f"launchd plist for {name} is missing")
 
-    version_ok, installed_version = _check_version()
-    print()
-    print(bold("Version"))
-    if not version_ok:
-        if installed_version is None:
-            print(f"  installed: {error('unknown')}")
-            print(f"  cli: {__version__}")
-            issues.append("version file missing")
-            suggestions.append("sudo macblock install --force")
-        else:
-            print(f"  installed: {warning(installed_version)}")
-            print(f"  cli: {__version__}")
-            issues.append(f"version mismatch (installed={installed_version}, cli={__version__})")
-            suggestions.append("sudo macblock install --force")
-    else:
-        print(f"  version: {success(__version__)}")
-
-    print()
-    print(bold("Blocklist"))
+    # Blocklist
+    subheader("Blocklist")
     if SYSTEM_BLOCKLIST_FILE.exists():
         try:
             size = SYSTEM_BLOCKLIST_FILE.stat().st_size
@@ -171,102 +185,103 @@ def run_diagnostics() -> int:
             line_count = 0
 
         if size == 0 or line_count == 0:
-            print(f"  entries: {error('0 (empty)')}")
+            status_err("Entries", "0 (empty)")
             issues.append("blocklist is empty")
             suggestions.append("sudo macblock update")
         else:
-            print(f"  entries: {success(str(line_count))}")
+            status_ok("Entries", f"{line_count:,}")
     else:
-        print(f"  blocklist: {error('not found')}")
+        status_err("File", "not found")
         issues.append("blocklist file not found")
         suggestions.append("sudo macblock update")
 
-    print()
-    print(bold("Upstream DNS"))
+    # Upstream DNS
+    subheader("Upstream DNS")
     if VAR_DB_UPSTREAM_CONF.exists():
         try:
             upstream_text = VAR_DB_UPSTREAM_CONF.read_text(encoding="utf-8")
             server_count = upstream_text.count("server=")
         except Exception:
-            upstream_text = ""
             server_count = 0
 
         if server_count == 0:
-            print(f"  servers: {error('0 (none configured)')}")
+            status_err("Servers", "0 (none configured)")
             issues.append("no upstream DNS servers configured")
             suggestions.append("sudo launchctl kickstart -k system/com.local.macblock.daemon")
         else:
-            print(f"  servers: {success(str(server_count))}")
+            status_ok("Servers", str(server_count))
     else:
-        print(f"  upstream.conf: {error('not found')}")
+        status_err("Config", "not found")
 
-    print()
-    print(bold("dnsmasq Process"))
+    # dnsmasq process
+    subheader("dnsmasq Process")
     dnsmasq_pid = _read_pid_file(VAR_DB_DNSMASQ_PID)
 
     if dnsmasq_pid is None:
-        print(f"  pid file: {warning('missing')}")
+        status_warn("PID file", "missing")
         issues.append("dnsmasq PID file missing")
     elif not _is_process_running(dnsmasq_pid):
-        print(f"  pid: {error(f'{dnsmasq_pid} (not running)')}")
+        status_err("PID", f"{dnsmasq_pid} (not running)")
         issues.append(f"dnsmasq process {dnsmasq_pid} not running")
         suggestions.append("sudo launchctl kickstart -k system/com.local.macblock.dnsmasq")
     else:
-        print(f"  pid: {success(str(dnsmasq_pid))}")
+        status_ok("PID", str(dnsmasq_pid))
         r_cmd = run(["/bin/ps", "-p", str(dnsmasq_pid), "-o", "command="])
         cmd = r_cmd.stdout.strip() if r_cmd.returncode == 0 else ""
         if cmd and str(SYSTEM_DNSMASQ_CONF) not in cmd:
-            print(f"  {warning('process may not be macblock-managed')}")
+            status_warn("Note", "process may not be macblock-managed")
 
     port_ok = _tcp_connect_ok(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT)
     if port_ok:
-        print(f"  listening: {success(f'{DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT}')}")
+        status_ok("Listening", f"{DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT}")
     else:
-        print(f"  listening: {error(f'not on {DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT}')}")
+        status_err("Listening", f"not on {DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT}")
         issues.append(f"dnsmasq not listening on port {DNSMASQ_LISTEN_PORT}")
 
         blocker = _check_port_in_use(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT)
         if blocker and "dnsmasq" not in blocker.lower():
-            print(f"  {warning(f'port in use by: {blocker}')}")
+            status_warn("Port blocker", blocker)
             issues.append(f"port {DNSMASQ_LISTEN_PORT} in use by {blocker}")
 
-    print()
-    print(bold("macblock Daemon"))
+    # Daemon process
+    subheader("macblock Daemon")
     daemon_pid = _read_pid_file(VAR_DB_DAEMON_PID)
 
     if daemon_pid is None:
-        print(f"  pid file: {warning('missing')}")
+        status_warn("PID file", "missing")
         issues.append("daemon PID file missing")
     elif not _is_process_running(daemon_pid):
-        print(f"  pid: {error(f'{daemon_pid} (not running)')}")
+        status_err("PID", f"{daemon_pid} (not running)")
         issues.append(f"daemon process {daemon_pid} not running")
         suggestions.append("sudo launchctl kickstart -k system/com.local.macblock.daemon")
     else:
-        print(f"  pid: {success(str(daemon_pid))}")
+        status_ok("PID", str(daemon_pid))
 
     if VAR_DB_DAEMON_READY.exists():
-        print(f"  ready: {success('yes')}")
+        status_ok("Ready", "yes")
     else:
-        print(f"  ready: {warning('no (not yet signaled)')}")
+        status_warn("Ready", "no (not yet signaled)")
         if daemon_pid and _is_process_running(daemon_pid):
             issues.append("daemon running but not ready")
 
-    print()
-    print(bold("DNS State"))
+    # DNS state
+    subheader("DNS State")
     st = load_state(SYSTEM_STATE_FILE)
-
-    enabled_str = success("enabled") if st.enabled else info("disabled")
-    print(f"  blocking: {enabled_str}")
 
     now = int(time.time())
     paused = st.resume_at_epoch is not None and st.resume_at_epoch > now
-    if paused and st.resume_at_epoch is not None:
-        remaining = st.resume_at_epoch - now
+
+    if st.enabled and not paused:
+        status_ok("Blocking", "enabled")
+    elif st.enabled and paused:
+        remaining = st.resume_at_epoch - now if st.resume_at_epoch else 0
         mins = remaining // 60
-        print(f"  paused: {warning(f'yes (resumes in {mins}m)')}")
+        status_warn("Blocking", f"paused ({mins}m remaining)")
+    else:
+        status_info("Blocking", "disabled")
 
     if st.managed_services:
-        print(f"  managed services: {len(st.managed_services)}")
+        status_info("Managed", f"{len(st.managed_services)} services")
         dns_issues = []
         for svc in st.managed_services:
             cur = get_dns_servers(svc)
@@ -278,32 +293,33 @@ def run_diagnostics() -> int:
 
         if dns_issues:
             for issue in dns_issues:
-                print(f"    {warning(issue)}")
+                list_item_warn(issue)
                 issues.append(f"DNS misconfigured: {issue}")
     else:
-        print(f"  managed services: {warning('none')}")
+        status_warn("Managed", "no services")
 
+    # Check for encrypted DNS
     r_dns = run(["/usr/sbin/scutil", "--dns"])
     if r_dns.returncode == 0:
         dns_output = (r_dns.stdout or "").lower()
         if "encrypted" in dns_output or "doh" in dns_output or "dot" in dns_output:
             print()
-            print(warning("Encrypted DNS (DoH/DoT) detected - may bypass macblock"))
+            list_item_warn("Encrypted DNS (DoH/DoT) detected - may bypass macblock")
             issues.append("encrypted DNS may bypass blocking")
 
+    # Summary
     print()
-    print(bold("Summary"))
-    print(f"  label: {APP_LABEL}")
-
     if not issues:
-        print(f"  status: {success('all checks passed')}")
+        result_success("All checks passed")
         return 0
 
-    print(f"  status: {error(f'{len(issues)} issue(s) found')}")
-    print()
-    print(bold("Issues"))
-    for i, issue in enumerate(issues, 1):
-        print(f"  {i}. {error(issue)}")
+    print(f"\n{red(SYMBOL_FAIL)} {len(issues)} issue(s) found")
+
+    if issues:
+        print()
+        subheader("Issues")
+        for i, issue in enumerate(issues, 1):
+            list_item_fail(issue)
 
     if suggestions:
         seen = set()
@@ -314,8 +330,9 @@ def run_diagnostics() -> int:
                 unique_suggestions.append(s)
 
         print()
-        print(bold("Suggested Fixes"))
+        subheader("Suggested Fixes")
         for s in unique_suggestions:
-            print(f"  {info(s)}")
+            list_item(cyan(s))
 
+    print()
     return 1

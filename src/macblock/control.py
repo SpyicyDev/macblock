@@ -4,7 +4,6 @@ import os
 import signal
 import time
 
-from macblock.colors import print_error, print_info, print_success, print_warning
 from macblock.constants import (
     APP_LABEL,
     LAUNCHD_DAEMON_PLIST,
@@ -17,6 +16,7 @@ from macblock.errors import MacblockError
 from macblock.launchd import kickstart
 from macblock.state import load_state, replace_state, save_state_atomic
 from macblock.system_dns import compute_managed_services, get_dns_servers
+from macblock.ui import Spinner, result_fail, result_success, step_warn
 
 
 DEFAULT_TIMEOUT = 10.0
@@ -149,101 +149,118 @@ def _wait_for_dns_restored(timeout: float = DEFAULT_TIMEOUT) -> tuple[bool, list
 
 def do_enable() -> int:
     _check_installed()
+    print()
+
     st = load_state(SYSTEM_STATE_FILE)
 
-    print_info("enabling blocking...")
+    with Spinner("Enabling blocking") as spinner:
+        save_state_atomic(
+            SYSTEM_STATE_FILE,
+            replace_state(st, enabled=True, resume_at_epoch=None),
+        )
 
-    save_state_atomic(
-        SYSTEM_STATE_FILE,
-        replace_state(st, enabled=True, resume_at_epoch=None),
-    )
+        if not _trigger_daemon():
+            spinner.warn("Could not signal daemon")
 
-    if not _trigger_daemon():
-        print_warning("could not signal daemon; trying to wait anyway")
+        if not _wait_for_daemon_ready(timeout=5.0):
+            pass
 
-    if not _wait_for_daemon_ready(timeout=5.0):
-        print_warning("daemon may not be ready")
+        dns_ok, failed = _wait_for_dns_localhost(timeout=DEFAULT_TIMEOUT)
+        if not dns_ok:
+            spinner.fail(f"DNS not redirected for: {', '.join(failed)}")
+            step_warn("Run 'macblock doctor' for diagnostics")
+            return 1
 
-    dns_ok, failed = _wait_for_dns_localhost(timeout=DEFAULT_TIMEOUT)
-    if not dns_ok:
-        print_error(f"DNS not redirected for: {', '.join(failed)}")
-        print_warning("blocking may not be active; run 'macblock doctor' for diagnostics")
-        return 1
+        spinner.succeed("Blocking enabled")
 
-    print_success("enabled - DNS blocking is now active")
+    result_success("DNS blocking is now active")
+    print()
     return 0
 
 
 def do_disable() -> int:
     _check_installed()
+    print()
+
     st = load_state(SYSTEM_STATE_FILE)
 
-    print_info("disabling blocking...")
+    with Spinner("Disabling blocking") as spinner:
+        save_state_atomic(
+            SYSTEM_STATE_FILE,
+            replace_state(st, enabled=False, resume_at_epoch=None),
+        )
 
-    save_state_atomic(
-        SYSTEM_STATE_FILE,
-        replace_state(st, enabled=False, resume_at_epoch=None),
-    )
+        if not _trigger_daemon():
+            spinner.warn("Could not signal daemon")
 
-    if not _trigger_daemon():
-        print_warning("could not signal daemon; trying to wait anyway")
+        dns_ok, still_localhost = _wait_for_dns_restored(timeout=DEFAULT_TIMEOUT)
+        if not dns_ok:
+            spinner.fail(f"DNS not restored for: {', '.join(still_localhost)}")
+            step_warn("Run 'macblock doctor' for diagnostics")
+            return 1
 
-    dns_ok, still_localhost = _wait_for_dns_restored(timeout=DEFAULT_TIMEOUT)
-    if not dns_ok:
-        print_error(f"DNS not restored for: {', '.join(still_localhost)}")
-        print_warning("you may need to manually reset DNS; run 'macblock doctor' for diagnostics")
-        return 1
+        spinner.succeed("Blocking disabled")
 
-    print_success("disabled - DNS restored to original settings")
+    result_success("DNS restored to original settings")
+    print()
     return 0
 
 
 def do_pause(duration: str) -> int:
     _check_installed()
+    print()
+
     seconds = _parse_duration_seconds(duration)
     resume_at = int(time.time()) + seconds
-
-    print_info(f"pausing blocking for {seconds // 60} minutes...")
+    mins = seconds // 60
 
     st = load_state(SYSTEM_STATE_FILE)
-    save_state_atomic(
-        SYSTEM_STATE_FILE,
-        replace_state(st, enabled=True, resume_at_epoch=resume_at),
-    )
 
-    if not _trigger_daemon():
-        print_warning("could not signal daemon; trying to wait anyway")
+    with Spinner(f"Pausing for {mins} minutes") as spinner:
+        save_state_atomic(
+            SYSTEM_STATE_FILE,
+            replace_state(st, enabled=True, resume_at_epoch=resume_at),
+        )
 
-    dns_ok, still_localhost = _wait_for_dns_restored(timeout=DEFAULT_TIMEOUT)
-    if not dns_ok:
-        print_error(f"DNS not restored for: {', '.join(still_localhost)}")
-        print_warning("pause may not be active; run 'macblock doctor' for diagnostics")
-        return 1
+        if not _trigger_daemon():
+            spinner.warn("Could not signal daemon")
 
-    mins = seconds // 60
-    print_success(f"paused for {mins} minutes - will auto-resume")
+        dns_ok, still_localhost = _wait_for_dns_restored(timeout=DEFAULT_TIMEOUT)
+        if not dns_ok:
+            spinner.fail(f"DNS not restored for: {', '.join(still_localhost)}")
+            step_warn("Run 'macblock doctor' for diagnostics")
+            return 1
+
+        spinner.succeed(f"Paused for {mins} minutes")
+
+    result_success(f"Blocking paused - will auto-resume in {mins} minutes")
+    print()
     return 0
 
 
 def do_resume() -> int:
     _check_installed()
+    print()
+
     st = load_state(SYSTEM_STATE_FILE)
 
-    print_info("resuming blocking...")
+    with Spinner("Resuming blocking") as spinner:
+        save_state_atomic(
+            SYSTEM_STATE_FILE,
+            replace_state(st, enabled=True, resume_at_epoch=None),
+        )
 
-    save_state_atomic(
-        SYSTEM_STATE_FILE,
-        replace_state(st, enabled=True, resume_at_epoch=None),
-    )
+        if not _trigger_daemon():
+            spinner.warn("Could not signal daemon")
 
-    if not _trigger_daemon():
-        print_warning("could not signal daemon; trying to wait anyway")
+        dns_ok, failed = _wait_for_dns_localhost(timeout=DEFAULT_TIMEOUT)
+        if not dns_ok:
+            spinner.fail(f"DNS not redirected for: {', '.join(failed)}")
+            step_warn("Run 'macblock doctor' for diagnostics")
+            return 1
 
-    dns_ok, failed = _wait_for_dns_localhost(timeout=DEFAULT_TIMEOUT)
-    if not dns_ok:
-        print_error(f"DNS not redirected for: {', '.join(failed)}")
-        print_warning("blocking may not be active; run 'macblock doctor' for diagnostics")
-        return 1
+        spinner.succeed("Blocking resumed")
 
-    print_success("resumed - DNS blocking is now active")
+    result_success("DNS blocking is now active")
+    print()
     return 0

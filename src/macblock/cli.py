@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import importlib
 import os
 import shutil
@@ -25,76 +24,67 @@ from macblock.lists import (
 )
 from macblock.platform import is_root, require_macos
 from macblock.status import show_status
+from macblock.ui import bold, cyan, dim, green, yellow
 
 
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="macblock")
-    p.add_argument("--version", action="version", version=f"macblock {__version__}")
+def _print_help() -> None:
+    """Print custom help menu."""
+    print()
+    print(f"  {bold('macblock')} {dim(f'v{__version__}')} - DNS-level ad blocking for macOS")
+    print()
 
-    sub = p.add_subparsers(dest="cmd", required=True)
+    print(f"  {bold('Usage:')}")
+    print(f"    macblock {cyan('<command>')} [options]")
+    print()
 
-    sub.add_parser("status", help="Show status")
-    sub.add_parser("doctor", help="Run diagnostics")
-    sub.add_parser("daemon", help=argparse.SUPPRESS)
+    print(f"  {bold('Status & Diagnostics:')}")
+    print(f"    {cyan('status')}              Show current blocking status")
+    print(f"    {cyan('doctor')}              Run diagnostics and health checks")
+    print(f"    {cyan('logs')}                View daemon logs")
+    print(f"    {cyan('test')} <domain>       Check if a domain is blocked")
+    print()
 
-    p_logs = sub.add_parser("logs", help="Show logs")
-    p_logs.add_argument("--component", choices=["daemon", "dnsmasq"], default="daemon")
-    p_logs.add_argument("--lines", type=int, default=200)
-    p_logs.add_argument("--follow", action="store_true")
-    p_logs.add_argument("--stderr", action="store_true")
+    print(f"  {bold('Control:')} {dim('(requires sudo)')}")
+    print(f"    {cyan('enable')}              Enable DNS blocking")
+    print(f"    {cyan('disable')}             Disable DNS blocking")
+    print(f"    {cyan('pause')} <duration>    Temporarily disable (e.g., 10m, 2h, 1d)")
+    print(f"    {cyan('resume')}              Resume blocking after pause")
+    print()
 
-    p_install = sub.add_parser("install", help="Install system integration (root)")
-    p_install.add_argument("--force", action="store_true")
-    p_install.add_argument("--skip-update", action="store_true", help="Skip automatic blocklist download")
+    print(f"  {bold('Installation:')} {dim('(requires sudo)')}")
+    print(f"    {cyan('install')}             Install system integration")
+    print(f"    {cyan('uninstall')}           Remove system integration")
+    print(f"    {cyan('update')}              Update blocklist from source")
+    print()
 
-    p_uninstall = sub.add_parser("uninstall", help="Uninstall system integration (root)")
-    p_uninstall.add_argument("--force", action="store_true")
+    print(f"  {bold('Configuration:')} {dim('(requires sudo)')}")
+    print(f"    {cyan('sources list')}        List available blocklist sources")
+    print(f"    {cyan('sources set')} <name>  Set blocklist source")
+    print(f"    {cyan('allow add')} <domain>  Whitelist a domain")
+    print(f"    {cyan('allow remove')} <domain>")
+    print(f"    {cyan('allow list')}          Show whitelisted domains")
+    print(f"    {cyan('deny add')} <domain>   Blacklist a domain")
+    print(f"    {cyan('deny remove')} <domain>")
+    print(f"    {cyan('deny list')}           Show blacklisted domains")
+    print()
 
-    sub.add_parser("enable", help="Enable blocking (set system DNS to localhost) (root)")
-    sub.add_parser("disable", help="Disable blocking (restore system DNS) (root)")
+    print(f"  {bold('Options:')}")
+    print(f"    {cyan('--version')}           Show version")
+    print(f"    {cyan('--help')}, {cyan('-h')}         Show this help")
+    print()
 
-    p_pause = sub.add_parser("pause", help="Temporarily disable (restore DNS) and auto-resume (root)")
-    p_pause.add_argument("duration", help="Duration like 10m, 2h")
-
-    sub.add_parser("resume", help="Resume blocking now (root)")
-
-    p_test = sub.add_parser("test", help="Test a domain")
-    p_test.add_argument("domain")
-
-    p_update = sub.add_parser("update", help="Update blocklist (root)")
-    p_update.add_argument("--source", default=None)
-    p_update.add_argument("--sha256", default=None)
-
-    p_sources = sub.add_parser("sources", help="Manage blocklist sources")
-    sources_sub = p_sources.add_subparsers(dest="sources_cmd", required=True)
-    sources_sub.add_parser("list")
-    sources_set = sources_sub.add_parser("set")
-    sources_set.add_argument("source")
-
-    p_allow = sub.add_parser("allow", help="Manage whitelist (root)")
-    allow_sub = p_allow.add_subparsers(dest="allow_cmd", required=True)
-    allow_add = allow_sub.add_parser("add")
-    allow_add.add_argument("domain")
-    allow_rm = allow_sub.add_parser("remove")
-    allow_rm.add_argument("domain")
-    allow_sub.add_parser("list")
-
-    p_deny = sub.add_parser("deny", help="Manage blacklist (root)")
-    deny_sub = p_deny.add_subparsers(dest="deny_cmd", required=True)
-    deny_add = deny_sub.add_parser("add")
-    deny_add.add_argument("domain")
-    deny_rm = deny_sub.add_parser("remove")
-    deny_rm.add_argument("domain")
-    deny_sub.add_parser("list")
-
-    return p
+    print(f"  {bold('Examples:')}")
+    print(f"    {dim('$')} sudo macblock install")
+    print(f"    {dim('$')} sudo macblock enable")
+    print(f"    {dim('$')} sudo macblock pause 30m")
+    print(f"    {dim('$')} macblock status")
+    print()
 
 
-def _needs_root(cmd: str, args: argparse.Namespace) -> bool:
+def _needs_root(cmd: str, args: dict) -> bool:
     if cmd in {"install", "uninstall", "enable", "disable", "pause", "resume", "update", "allow", "deny"}:
         return True
-
-    return cmd == "sources" and getattr(args, "sources_cmd", None) == "set"
+    return cmd == "sources" and args.get("sources_cmd") == "set"
 
 
 def _exec_sudo(argv: list[str]) -> None:
@@ -115,11 +105,109 @@ def _exec_sudo(argv: list[str]) -> None:
     os.execve(sudo, [sudo, "-E", sys.executable, "-m", "macblock", *argv], env)
 
 
-def _ensure_root(cmd: str, args: argparse.Namespace, argv: list[str]) -> None:
-    if is_root() or not _needs_root(cmd, args):
-        return
+def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
+    """Simple argument parser."""
+    args: dict = {}
 
-    _exec_sudo(argv)
+    if not argv:
+        return None, args
+
+    # Handle --version and --help first
+    if argv[0] in ("--version", "-V"):
+        print(f"macblock {__version__}")
+        sys.exit(0)
+
+    if argv[0] in ("--help", "-h"):
+        _print_help()
+        sys.exit(0)
+
+    cmd = argv[0]
+    rest = argv[1:]
+
+    # Handle subcommands
+    if cmd == "logs":
+        args["component"] = "daemon"
+        args["lines"] = 200
+        args["follow"] = False
+        args["stderr"] = False
+        i = 0
+        while i < len(rest):
+            if rest[i] == "--component" and i + 1 < len(rest):
+                args["component"] = rest[i + 1]
+                i += 2
+            elif rest[i] == "--lines" and i + 1 < len(rest):
+                args["lines"] = int(rest[i + 1])
+                i += 2
+            elif rest[i] == "--follow":
+                args["follow"] = True
+                i += 1
+            elif rest[i] == "--stderr":
+                args["stderr"] = True
+                i += 1
+            else:
+                i += 1
+
+    elif cmd == "install":
+        args["force"] = "--force" in rest
+        args["skip_update"] = "--skip-update" in rest
+
+    elif cmd == "uninstall":
+        args["force"] = "--force" in rest
+
+    elif cmd == "pause":
+        if rest:
+            args["duration"] = rest[0]
+        else:
+            raise MacblockError("pause requires a duration (e.g., 10m, 2h, 1d)")
+
+    elif cmd == "test":
+        if rest:
+            args["domain"] = rest[0]
+        else:
+            raise MacblockError("test requires a domain")
+
+    elif cmd == "update":
+        args["source"] = None
+        args["sha256"] = None
+        i = 0
+        while i < len(rest):
+            if rest[i] == "--source" and i + 1 < len(rest):
+                args["source"] = rest[i + 1]
+                i += 2
+            elif rest[i] == "--sha256" and i + 1 < len(rest):
+                args["sha256"] = rest[i + 1]
+                i += 2
+            else:
+                i += 1
+
+    elif cmd == "sources":
+        if not rest:
+            raise MacblockError("sources requires a subcommand: list or set")
+        args["sources_cmd"] = rest[0]
+        if rest[0] == "set":
+            if len(rest) < 2:
+                raise MacblockError("sources set requires a source name")
+            args["source"] = rest[1]
+
+    elif cmd == "allow":
+        if not rest:
+            raise MacblockError("allow requires a subcommand: add, remove, or list")
+        args["allow_cmd"] = rest[0]
+        if rest[0] in ("add", "remove"):
+            if len(rest) < 2:
+                raise MacblockError(f"allow {rest[0]} requires a domain")
+            args["domain"] = rest[1]
+
+    elif cmd == "deny":
+        if not rest:
+            raise MacblockError("deny requires a subcommand: add, remove, or list")
+        args["deny_cmd"] = rest[0]
+        if rest[0] in ("add", "remove"):
+            if len(rest) < 2:
+                raise MacblockError(f"deny {rest[0]} requires a domain")
+            args["domain"] = rest[1]
+
+    return cmd, args
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -127,60 +215,70 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         require_macos()
-        parser = build_parser()
-        args = parser.parse_args(argv)
-        _ensure_root(args.cmd, args, argv)
 
-        if args.cmd == "status":
+        cmd, args = _parse_args(argv)
+
+        # Show help if no command provided
+        if cmd is None:
+            _print_help()
+            return 0
+
+        # Check if we need root
+        if _needs_root(cmd, args) and not is_root():
+            _exec_sudo(argv)
+
+        if cmd == "status":
             return show_status()
-        if args.cmd == "doctor":
+        if cmd == "doctor":
             return run_diagnostics()
-        if args.cmd == "daemon":
+        if cmd == "daemon":
             from macblock.daemon import run_daemon
             return run_daemon()
-        if args.cmd == "logs":
+        if cmd == "logs":
             show_logs = importlib.import_module("macblock.logs").show_logs
             return show_logs(
-                component=str(args.component),
-                lines=int(args.lines),
-                follow=bool(args.follow),
-                stderr=bool(args.stderr),
+                component=str(args.get("component", "daemon")),
+                lines=int(args.get("lines", 200)),
+                follow=bool(args.get("follow", False)),
+                stderr=bool(args.get("stderr", False)),
             )
-        if args.cmd == "install":
-            return do_install(force=bool(args.force), skip_update=bool(getattr(args, "skip_update", False)))
-        if args.cmd == "uninstall":
-            return do_uninstall(force=bool(args.force))
-        if args.cmd == "enable":
+        if cmd == "install":
+            return do_install(force=bool(args.get("force")), skip_update=bool(args.get("skip_update")))
+        if cmd == "uninstall":
+            return do_uninstall(force=bool(args.get("force")))
+        if cmd == "enable":
             return do_enable()
-        if args.cmd == "disable":
+        if cmd == "disable":
             return do_disable()
-        if args.cmd == "pause":
-            return do_pause(args.duration)
-        if args.cmd == "resume":
+        if cmd == "pause":
+            return do_pause(args["duration"])
+        if cmd == "resume":
             return do_resume()
-        if args.cmd == "test":
-            return test_domain(args.domain)
-        if args.cmd == "update":
-            return update_blocklist(source=args.source, sha256=args.sha256)
-        if args.cmd == "sources":
-            if args.sources_cmd == "list":
+        if cmd == "test":
+            return test_domain(args["domain"])
+        if cmd == "update":
+            return update_blocklist(source=args.get("source"), sha256=args.get("sha256"))
+        if cmd == "sources":
+            if args.get("sources_cmd") == "list":
                 return list_blocklist_sources()
-            return set_blocklist_source(args.source)
-        if args.cmd == "allow":
-            if args.allow_cmd == "add":
-                return add_whitelist(args.domain)
-            if args.allow_cmd == "remove":
-                return remove_whitelist(args.domain)
+            return set_blocklist_source(args["source"])
+        if cmd == "allow":
+            if args.get("allow_cmd") == "add":
+                return add_whitelist(args["domain"])
+            if args.get("allow_cmd") == "remove":
+                return remove_whitelist(args["domain"])
             return list_whitelist()
-        if args.cmd == "deny":
-            if args.deny_cmd == "add":
-                return add_blacklist(args.domain)
-            if args.deny_cmd == "remove":
-                return remove_blacklist(args.domain)
+        if cmd == "deny":
+            if args.get("deny_cmd") == "add":
+                return add_blacklist(args["domain"])
+            if args.get("deny_cmd") == "remove":
+                return remove_blacklist(args["domain"])
             return list_blacklist()
 
-        parser.error("unknown command")
+        print(f"error: unknown command: {cmd}", file=sys.stderr)
+        print(f"Run 'macblock --help' for usage.", file=sys.stderr)
         return 2
+
     except UnsupportedPlatformError as e:
         print(str(e), file=sys.stderr)
         return 2

@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 
 from macblock import __version__
-from macblock.colors import print_error, print_info, print_success, print_warning
 from macblock.constants import (
     APP_LABEL,
     DNSMASQ_LISTEN_ADDR,
@@ -46,6 +45,7 @@ from macblock.fs import atomic_write_text, ensure_dir
 from macblock.launchd import bootout_label, bootout_system, bootstrap_system, enable_service, kickstart, service_exists
 from macblock.state import State, load_state, save_state_atomic
 from macblock.system_dns import ServiceDnsBackup, restore_from_backup
+from macblock.ui import Spinner, dim, result_fail, result_success, step_done, step_fail, step_warn
 from macblock.users import delete_system_user, ensure_system_user
 
 
@@ -210,14 +210,14 @@ def _cleanup_old_install() -> None:
 
     for label in [f"{APP_LABEL}.state", f"{APP_LABEL}.upstreams", f"{APP_LABEL}.pf"]:
         try:
-            bootout_label(label)
+            bootout_label(label, ignore_errors=True)
         except Exception:
             pass
 
     for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST]:
         if plist.exists():
             try:
-                bootout_system(plist)
+                bootout_system(plist, ignore_errors=True)
             except Exception:
                 pass
 
@@ -240,33 +240,39 @@ def _cleanup_old_install() -> None:
 
 
 def _run_preflight_checks(force: bool) -> tuple[str, str]:
-    print_info("running pre-flight checks...")
-
-    dnsmasq_installed, dnsmasq_bin = _check_dnsmasq_installed()
-    if not dnsmasq_installed or dnsmasq_bin is None:
-        raise MacblockError(
-            "dnsmasq is not installed.\n"
-            "  Install with: brew install dnsmasq\n"
-            "  Then re-run: sudo macblock install"
-        )
-
-    port_available, blocker = _check_port_available(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT)
-    if not port_available:
-        if blocker and "dnsmasq" in blocker.lower():
-            if not force:
-                raise MacblockError(
-                    f"Port {DNSMASQ_LISTEN_PORT} is in use by {blocker}.\n"
-                    "  This may be from a previous installation.\n"
-                    "  Run: sudo macblock install --force"
-                )
-        else:
+    with Spinner("Running pre-flight checks") as spinner:
+        dnsmasq_installed, dnsmasq_bin = _check_dnsmasq_installed()
+        if not dnsmasq_installed or dnsmasq_bin is None:
+            spinner.fail("dnsmasq not installed")
             raise MacblockError(
-                f"Port {DNSMASQ_LISTEN_PORT} is already in use by: {blocker}\n"
-                "  macblock needs this port for DNS.\n"
-                "  Stop the conflicting service and retry."
+                "dnsmasq is not installed.\n"
+                "  Install with: brew install dnsmasq\n"
+                "  Then re-run: sudo macblock install"
             )
 
-    macblock_bin = _find_macblock_bin()
+        port_available, blocker = _check_port_available(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT)
+        if not port_available:
+            if blocker and "dnsmasq" in blocker.lower():
+                if not force:
+                    spinner.fail(f"Port {DNSMASQ_LISTEN_PORT} in use by {blocker}")
+                    raise MacblockError(
+                        f"Port {DNSMASQ_LISTEN_PORT} is in use by {blocker}.\n"
+                        "  This may be from a previous installation.\n"
+                        "  Run: sudo macblock install --force"
+                    )
+            else:
+                spinner.fail(f"Port {DNSMASQ_LISTEN_PORT} in use")
+                raise MacblockError(
+                    f"Port {DNSMASQ_LISTEN_PORT} is already in use by: {blocker}\n"
+                    "  macblock needs this port for DNS.\n"
+                    "  Stop the conflicting service and retry."
+                )
+
+        macblock_bin = _find_macblock_bin()
+        spinner.succeed("Pre-flight checks passed")
+
+    step_done(f"dnsmasq: {dim(dnsmasq_bin)}")
+    step_done(f"macblock: {dim(macblock_bin)}")
 
     return dnsmasq_bin, macblock_bin
 
@@ -335,126 +341,130 @@ def _verify_services_running() -> tuple[bool, list[str]]:
 
 
 def do_install(force: bool = False, skip_update: bool = False) -> int:
+    print()
+
     existing = _detect_existing_install()
     if existing:
-        msg = "existing macblock installation detected"
         if force:
-            print_warning(msg + " - upgrading")
+            step_warn("Existing installation detected - upgrading")
             _cleanup_old_install()
         else:
-            raise MacblockError(msg + "; run: sudo macblock uninstall (or pass --force)")
+            raise MacblockError("Existing macblock installation detected; run: sudo macblock uninstall (or pass --force)")
 
     dnsmasq_bin, macblock_bin = _run_preflight_checks(force)
 
-    print_info(f"using dnsmasq: {dnsmasq_bin}")
-    print_info(f"using macblock: {macblock_bin}")
+    with Spinner("Creating system user") as spinner:
+        ensure_system_user(DNSMASQ_USER)
+        spinner.succeed(f"Created system user {dim(DNSMASQ_USER)}")
 
-    print_info("creating system user...")
-    ensure_system_user(DNSMASQ_USER)
+    with Spinner("Creating directories") as spinner:
+        ensure_dir(SYSTEM_SUPPORT_DIR, mode=0o755)
+        ensure_dir(SYSTEM_CONFIG_DIR, mode=0o755)
+        ensure_dir(SYSTEM_LOG_DIR, mode=0o755)
+        ensure_dir(VAR_DB_DIR, mode=0o755)
+        ensure_dir(VAR_DB_DNSMASQ_DIR, mode=0o755)
 
-    print_info("creating directories...")
-    ensure_dir(SYSTEM_SUPPORT_DIR, mode=0o755)
-    ensure_dir(SYSTEM_CONFIG_DIR, mode=0o755)
-    ensure_dir(SYSTEM_LOG_DIR, mode=0o755)
-    ensure_dir(VAR_DB_DIR, mode=0o755)
-    ensure_dir(VAR_DB_DNSMASQ_DIR, mode=0o755)
+        _chown_root(SYSTEM_SUPPORT_DIR)
+        _chown_root(SYSTEM_CONFIG_DIR)
+        _chown_root(SYSTEM_LOG_DIR)
+        _chown_root(VAR_DB_DIR)
+        _chown_user(VAR_DB_DNSMASQ_DIR, DNSMASQ_USER)
+        spinner.succeed("Created directories")
 
-    _chown_root(SYSTEM_SUPPORT_DIR)
-    _chown_root(SYSTEM_CONFIG_DIR)
-    _chown_root(SYSTEM_LOG_DIR)
-    _chown_root(VAR_DB_DIR)
-    _chown_user(VAR_DB_DNSMASQ_DIR, DNSMASQ_USER)
+    with Spinner("Writing configuration") as spinner:
+        if not SYSTEM_WHITELIST_FILE.exists():
+            atomic_write_text(SYSTEM_WHITELIST_FILE, "", mode=0o644)
+            _chown_root(SYSTEM_WHITELIST_FILE)
 
-    print_info("writing configuration files...")
+        if not SYSTEM_BLACKLIST_FILE.exists():
+            atomic_write_text(SYSTEM_BLACKLIST_FILE, "", mode=0o644)
+            _chown_root(SYSTEM_BLACKLIST_FILE)
 
-    if not SYSTEM_WHITELIST_FILE.exists():
-        atomic_write_text(SYSTEM_WHITELIST_FILE, "", mode=0o644)
-        _chown_root(SYSTEM_WHITELIST_FILE)
+        if not SYSTEM_BLOCKLIST_FILE.exists():
+            atomic_write_text(SYSTEM_BLOCKLIST_FILE, "", mode=0o644)
+            _chown_root(SYSTEM_BLOCKLIST_FILE)
 
-    if not SYSTEM_BLACKLIST_FILE.exists():
-        atomic_write_text(SYSTEM_BLACKLIST_FILE, "", mode=0o644)
-        _chown_root(SYSTEM_BLACKLIST_FILE)
+        if not SYSTEM_RAW_BLOCKLIST_FILE.exists():
+            atomic_write_text(SYSTEM_RAW_BLOCKLIST_FILE, "", mode=0o644)
+            _chown_root(SYSTEM_RAW_BLOCKLIST_FILE)
 
-    if not SYSTEM_BLOCKLIST_FILE.exists():
-        atomic_write_text(SYSTEM_BLOCKLIST_FILE, "", mode=0o644)
-        _chown_root(SYSTEM_BLOCKLIST_FILE)
+        if not VAR_DB_UPSTREAM_CONF.exists():
+            atomic_write_text(VAR_DB_UPSTREAM_CONF, "server=1.1.1.1\nserver=8.8.8.8\n", mode=0o644)
+        _chown_root(VAR_DB_UPSTREAM_CONF)
 
-    if not SYSTEM_RAW_BLOCKLIST_FILE.exists():
-        atomic_write_text(SYSTEM_RAW_BLOCKLIST_FILE, "", mode=0o644)
-        _chown_root(SYSTEM_RAW_BLOCKLIST_FILE)
+        atomic_write_text(SYSTEM_DNSMASQ_CONF, render_dnsmasq_conf(), mode=0o644)
+        _chown_root(SYSTEM_DNSMASQ_CONF)
 
-    if not VAR_DB_UPSTREAM_CONF.exists():
-        atomic_write_text(VAR_DB_UPSTREAM_CONF, "server=1.1.1.1\nserver=8.8.8.8\n", mode=0o644)
-    _chown_root(VAR_DB_UPSTREAM_CONF)
+        if not SYSTEM_DNS_EXCLUDE_SERVICES_FILE.exists():
+            atomic_write_text(
+                SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
+                "# One network service name per line (exact match)\n",
+                mode=0o644,
+            )
+            _chown_root(SYSTEM_DNS_EXCLUDE_SERVICES_FILE)
 
-    atomic_write_text(SYSTEM_DNSMASQ_CONF, render_dnsmasq_conf(), mode=0o644)
-    _chown_root(SYSTEM_DNSMASQ_CONF)
+        if not SYSTEM_STATE_FILE.exists():
+            save_state_atomic(
+                SYSTEM_STATE_FILE,
+                State(
+                    schema_version=2,
+                    enabled=False,
+                    resume_at_epoch=None,
+                    blocklist_source=None,
+                    dns_backup={},
+                    managed_services=[],
+                    resolver_domains=[],
+                ),
+            )
+            _chown_root(SYSTEM_STATE_FILE)
 
-    if not SYSTEM_DNS_EXCLUDE_SERVICES_FILE.exists():
-        atomic_write_text(
-            SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
-            "# One network service name per line (exact match)\n",
-            mode=0o644,
-        )
-        _chown_root(SYSTEM_DNS_EXCLUDE_SERVICES_FILE)
+        atomic_write_text(SYSTEM_VERSION_FILE, f"{__version__}\n", mode=0o644)
+        _chown_root(SYSTEM_VERSION_FILE)
 
-    if not SYSTEM_STATE_FILE.exists():
-        save_state_atomic(
-            SYSTEM_STATE_FILE,
-            State(
-                schema_version=2,
-                enabled=False,
-                resume_at_epoch=None,
-                blocklist_source=None,
-                dns_backup={},
-                managed_services=[],
-                resolver_domains=[],
-            ),
-        )
-        _chown_root(SYSTEM_STATE_FILE)
+        dnsmasq_plist_content = _render_dnsmasq_plist(dnsmasq_bin)
+        daemon_plist_content = _render_daemon_plist(macblock_bin)
 
-    atomic_write_text(SYSTEM_VERSION_FILE, f"{__version__}\n", mode=0o644)
-    _chown_root(SYSTEM_VERSION_FILE)
+        atomic_write_text(LAUNCHD_DNSMASQ_PLIST, dnsmasq_plist_content, mode=0o644)
+        _chown_root(LAUNCHD_DNSMASQ_PLIST)
 
-    dnsmasq_plist = _render_dnsmasq_plist(dnsmasq_bin)
-    daemon_plist = _render_daemon_plist(macblock_bin)
+        atomic_write_text(LAUNCHD_DAEMON_PLIST, daemon_plist_content, mode=0o644)
+        _chown_root(LAUNCHD_DAEMON_PLIST)
+        spinner.succeed("Configuration written")
 
-    atomic_write_text(LAUNCHD_DNSMASQ_PLIST, dnsmasq_plist, mode=0o644)
-    _chown_root(LAUNCHD_DNSMASQ_PLIST)
+    with Spinner("Starting services") as spinner:
+        _bootstrap(LAUNCHD_DNSMASQ_PLIST, f"{APP_LABEL}.dnsmasq")
+        _bootstrap(LAUNCHD_DAEMON_PLIST, f"{APP_LABEL}.daemon")
+        spinner.succeed("Services started")
 
-    atomic_write_text(LAUNCHD_DAEMON_PLIST, daemon_plist, mode=0o644)
-    _chown_root(LAUNCHD_DAEMON_PLIST)
-
-    print_info("starting launchd services...")
-
-    _bootstrap(LAUNCHD_DNSMASQ_PLIST, f"{APP_LABEL}.dnsmasq")
-    _bootstrap(LAUNCHD_DAEMON_PLIST, f"{APP_LABEL}.daemon")
-
-    print_info("verifying services...")
-    services_ok, issues = _verify_services_running()
-
-    if not services_ok:
-        print_error("service verification failed:")
-        for issue in issues:
-            print_error(f"  {issue}")
-        print_warning("installation may be incomplete; run 'macblock doctor' for diagnostics")
-        return 1
-
-    print_success(f"installed macblock {__version__}")
+    with Spinner("Verifying services") as spinner:
+        services_ok, issues = _verify_services_running()
+        if not services_ok:
+            spinner.fail("Service verification failed")
+            for issue in issues:
+                step_fail(issue)
+            step_warn("Run 'macblock doctor' for diagnostics")
+            return 1
+        spinner.succeed("Services running")
 
     if not skip_update:
-        print_info("downloading blocklist (this may take a moment)...")
-        try:
-            from macblock.blocklists import update_blocklist
-            update_blocklist()
-        except Exception as e:
-            print_warning(f"blocklist download failed: {e}")
-            print_warning("run 'sudo macblock update' manually to download blocklist")
+        with Spinner("Downloading blocklist") as spinner:
+            try:
+                from macblock.blocklists import update_blocklist
+                result = update_blocklist()
+                if result == 0:
+                    spinner.succeed("Blocklist downloaded")
+                else:
+                    spinner.warn("Blocklist download had issues")
+            except Exception as e:
+                spinner.warn(f"Blocklist download failed: {e}")
+                step_warn("Run 'sudo macblock update' manually")
 
-    print_success("installation complete!")
-    print_info("next steps:")
-    print_info("  1. Run 'macblock doctor' to verify installation")
-    print_info("  2. Run 'sudo macblock enable' to start blocking")
+    result_success(f"Installed macblock {__version__}")
+    print()
+    print(f"  Next steps:")
+    print(f"    1. Run {dim('macblock doctor')} to verify")
+    print(f"    2. Run {dim('sudo macblock enable')} to start blocking")
+    print()
     return 0
 
 
@@ -498,86 +508,102 @@ def _restore_dns_from_state(st: State) -> None:
 
 
 def do_uninstall(force: bool = False) -> int:
+    print()
+
     st = load_state(SYSTEM_STATE_FILE)
 
-    try:
-        _restore_dns_from_state(st)
-    except Exception:
-        if not force:
-            raise
+    with Spinner("Restoring DNS settings") as spinner:
+        try:
+            _restore_dns_from_state(st)
+            spinner.succeed("DNS settings restored")
+        except Exception as e:
+            if force:
+                spinner.warn(f"Could not restore DNS: {e}")
+            else:
+                spinner.fail(f"Could not restore DNS: {e}")
+                raise
 
-    try:
-        _remove_any_macblock_resolvers()
-    except Exception:
-        if not force:
-            raise
+    with Spinner("Removing resolver files") as spinner:
+        try:
+            _remove_any_macblock_resolvers()
+            spinner.succeed("Resolver files removed")
+        except Exception as e:
+            if force:
+                spinner.warn(f"Could not remove resolvers: {e}")
+            else:
+                spinner.fail(f"Could not remove resolvers: {e}")
+                raise
 
     old_pf_plist = LAUNCHD_DIR / f"{APP_LABEL}.pf.plist"
     old_bin_dir = SYSTEM_SUPPORT_DIR / "bin"
 
-    for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST]:
-        try:
-            if plist.exists():
-                bootout_system(plist)
-        except Exception:
-            if not force:
-                raise
-
-    for p in [LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_STATE_PLIST, old_pf_plist]:
-        if p.exists():
-            p.unlink()
-
-    for p in [
-        old_bin_dir / "apply-state.py",
-        old_bin_dir / "update-upstreams.py",
-        old_bin_dir / "macblockd.py",
-    ]:
-        if p.exists():
-            p.unlink()
-
-    for p in [
-        VAR_DB_DNSMASQ_PID,
-        VAR_DB_DNSMASQ_DIR / "dnsmasq.log",
-        VAR_DB_UPSTREAM_CONF,
-        VAR_DB_DAEMON_PID,
-    ]:
-        if p.exists():
-            p.unlink()
-
-    for d in [VAR_DB_DNSMASQ_DIR, VAR_DB_DIR]:
-        if d.exists():
+    with Spinner("Stopping services") as spinner:
+        for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST]:
             try:
-                d.rmdir()
+                if plist.exists():
+                    bootout_system(plist, ignore_errors=True)
             except Exception:
                 pass
+        spinner.succeed("Services stopped")
 
-    for p in [
-        SYSTEM_DNSMASQ_CONF,
-        SYSTEM_RAW_BLOCKLIST_FILE,
-        SYSTEM_BLOCKLIST_FILE,
-        SYSTEM_WHITELIST_FILE,
-        SYSTEM_BLACKLIST_FILE,
-        SYSTEM_STATE_FILE,
-        SYSTEM_VERSION_FILE,
-        SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
-        SYSTEM_LOG_DIR / "dnsmasq.out.log",
-        SYSTEM_LOG_DIR / "dnsmasq.err.log",
-        SYSTEM_LOG_DIR / "daemon.out.log",
-        SYSTEM_LOG_DIR / "daemon.err.log",
-        SYSTEM_LOG_DIR / "upstreams.out.log",
-        SYSTEM_LOG_DIR / "upstreams.err.log",
-        SYSTEM_LOG_DIR / "state.out.log",
-        SYSTEM_LOG_DIR / "state.err.log",
-    ]:
-        if p.exists():
-            p.unlink()
+    with Spinner("Removing files") as spinner:
+        for p in [LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_STATE_PLIST, old_pf_plist]:
+            if p.exists():
+                p.unlink()
 
-    for d in [old_bin_dir, SYSTEM_CONFIG_DIR, SYSTEM_LOG_DIR, SYSTEM_SUPPORT_DIR]:
-        if d.exists():
-            try:
-                d.rmdir()
-            except Exception:
-                pass
+        for p in [
+            old_bin_dir / "apply-state.py",
+            old_bin_dir / "update-upstreams.py",
+            old_bin_dir / "macblockd.py",
+        ]:
+            if p.exists():
+                p.unlink()
+
+        for p in [
+            VAR_DB_DNSMASQ_PID,
+            VAR_DB_DNSMASQ_DIR / "dnsmasq.log",
+            VAR_DB_UPSTREAM_CONF,
+            VAR_DB_DAEMON_PID,
+        ]:
+            if p.exists():
+                p.unlink()
+
+        for d in [VAR_DB_DNSMASQ_DIR, VAR_DB_DIR]:
+            if d.exists():
+                try:
+                    d.rmdir()
+                except Exception:
+                    pass
+
+        for p in [
+            SYSTEM_DNSMASQ_CONF,
+            SYSTEM_RAW_BLOCKLIST_FILE,
+            SYSTEM_BLOCKLIST_FILE,
+            SYSTEM_WHITELIST_FILE,
+            SYSTEM_BLACKLIST_FILE,
+            SYSTEM_STATE_FILE,
+            SYSTEM_VERSION_FILE,
+            SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
+            SYSTEM_LOG_DIR / "dnsmasq.out.log",
+            SYSTEM_LOG_DIR / "dnsmasq.err.log",
+            SYSTEM_LOG_DIR / "daemon.out.log",
+            SYSTEM_LOG_DIR / "daemon.err.log",
+            SYSTEM_LOG_DIR / "upstreams.out.log",
+            SYSTEM_LOG_DIR / "upstreams.err.log",
+            SYSTEM_LOG_DIR / "state.out.log",
+            SYSTEM_LOG_DIR / "state.err.log",
+        ]:
+            if p.exists():
+                p.unlink()
+
+        for d in [old_bin_dir, SYSTEM_CONFIG_DIR, SYSTEM_LOG_DIR, SYSTEM_SUPPORT_DIR]:
+            if d.exists():
+                try:
+                    d.rmdir()
+                except Exception:
+                    pass
+
+        spinner.succeed("Files removed")
 
     if force:
         try:
@@ -586,7 +612,6 @@ def do_uninstall(force: bool = False) -> int:
             pass
 
     leftovers: list[str] = []
-
     for label in [
         f"{APP_LABEL}.dnsmasq",
         f"{APP_LABEL}.daemon",
@@ -598,11 +623,13 @@ def do_uninstall(force: bool = False) -> int:
             leftovers.append(f"launchd {label}")
 
     if leftovers:
-        msg = "uninstall incomplete: " + ", ".join(leftovers)
+        msg = "Uninstall incomplete: " + ", ".join(leftovers)
         if force:
-            print_warning(msg)
+            step_warn(msg)
         else:
+            result_fail(msg)
             raise MacblockError(msg)
 
-    print_success("uninstalled")
+    result_success("Uninstalled macblock")
+    print()
     return 0
