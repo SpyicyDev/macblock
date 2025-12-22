@@ -280,13 +280,51 @@ def _seconds_until_resume(state: State) -> float | None:
     return float(state.resume_at_epoch - now)
 
 
-def _wait_for_network_change(timeout: float | None) -> None:
+def _wait_for_network_change_or_signal(timeout: float | None) -> None:
+    """Wait for network change notification or until signaled.
+    
+    Uses Popen with a poll loop so we can check for signals.
+    """
+    global _trigger_apply, _shutdown_requested
+    
     cmd = ["/usr/bin/notifyutil", "-w", "com.apple.system.config.network_change"]
-
+    
     try:
-        subprocess.run(cmd, check=False, timeout=timeout, capture_output=True)
-    except subprocess.TimeoutExpired:
-        pass
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        # If we can't start notifyutil, just sleep briefly
+        time.sleep(1.0)
+        return
+    
+    try:
+        deadline = time.time() + timeout if timeout else None
+        poll_interval = 0.25  # Check for signals every 250ms
+        
+        while True:
+            # Check if we should exit the wait
+            if _trigger_apply or _shutdown_requested:
+                break
+            
+            # Check if timeout expired
+            if deadline and time.time() >= deadline:
+                break
+            
+            # Check if process finished (network change occurred)
+            ret = proc.poll()
+            if ret is not None:
+                break
+            
+            # Sleep briefly before next poll
+            time.sleep(poll_interval)
+    finally:
+        # Clean up the subprocess
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
 
 
 def _write_pid_file() -> None:
@@ -385,10 +423,7 @@ def run_daemon() -> int:
             if timeout is not None and timeout > 60:
                 timeout = 60.0
 
-            _wait_for_network_change(timeout)
-
-            if _trigger_apply:
-                continue
+            _wait_for_network_change_or_signal(timeout)
 
     except KeyboardInterrupt:
         print("daemon interrupted", file=sys.stderr)
