@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+# Schema version for state.json - increment when making breaking changes.
+# Both CLI (state.py) and daemon (macblockd.py.tmpl) must agree on this.
+CURRENT_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -88,8 +93,15 @@ def load_state(path: Path) -> State:
             if isinstance(d, str) and d:
                 resolver_domains.append(d)
 
+    schema_version = int(data.get("schema_version", CURRENT_SCHEMA_VERSION))
+    if schema_version != CURRENT_SCHEMA_VERSION:
+        print(
+            f"warning: state.json schema_version={schema_version}, expected {CURRENT_SCHEMA_VERSION}",
+            file=sys.stderr,
+        )
+
     return State(
-        schema_version=int(data.get("schema_version", 2)),
+        schema_version=schema_version,
         enabled=enabled,
         resume_at_epoch=resume_at_epoch,
         blocklist_source=str(src) if src is not None else None,
