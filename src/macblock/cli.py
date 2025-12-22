@@ -14,6 +14,7 @@ from macblock.blocklists import list_blocklist_sources, set_blocklist_source, up
 from macblock.control import do_disable, do_enable, do_pause, do_resume
 from macblock.doctor import run_diagnostics
 from macblock.dns_test import test_domain
+from macblock.help import show_main_help, show_command_help
 from macblock.lists import (
     add_blacklist,
     add_whitelist,
@@ -24,61 +25,35 @@ from macblock.lists import (
 )
 from macblock.platform import is_root, require_macos
 from macblock.status import show_status
-from macblock.ui import bold, cyan, dim, green, yellow
 
 
-def _print_help() -> None:
-    """Print custom help menu."""
-    print()
-    print(f"  {bold('macblock')} {dim(f'v{__version__}')} - DNS-level ad blocking for macOS")
-    print()
+def _has_help_flag(args: list[str]) -> bool:
+    """Check if args contain help flags."""
+    return "-h" in args or "--help" in args
 
-    print(f"  {bold('Usage:')}")
-    print(f"    macblock {cyan('<command>')} [options]")
-    print()
 
-    print(f"  {bold('Status & Diagnostics:')}")
-    print(f"    {cyan('status')}              Show current blocking status")
-    print(f"    {cyan('doctor')}              Run diagnostics and health checks")
-    print(f"    {cyan('logs')}                View daemon logs")
-    print(f"    {cyan('test')} <domain>       Check if a domain is blocked")
-    print()
+def _remove_help_flags(args: list[str]) -> list[str]:
+    """Remove help flags from args."""
+    return [a for a in args if a not in ("-h", "--help")]
 
-    print(f"  {bold('Control:')} {dim('(requires sudo)')}")
-    print(f"    {cyan('enable')}              Enable DNS blocking")
-    print(f"    {cyan('disable')}             Disable DNS blocking")
-    print(f"    {cyan('pause')} <duration>    Temporarily disable (e.g., 10m, 2h, 1d)")
-    print(f"    {cyan('resume')}              Resume blocking after pause")
-    print()
 
-    print(f"  {bold('Installation:')} {dim('(requires sudo)')}")
-    print(f"    {cyan('install')}             Install system integration")
-    print(f"    {cyan('uninstall')}           Remove system integration")
-    print(f"    {cyan('update')}              Update blocklist from source")
-    print()
-
-    print(f"  {bold('Configuration:')} {dim('(requires sudo)')}")
-    print(f"    {cyan('sources list')}        List available blocklist sources")
-    print(f"    {cyan('sources set')} <name>  Set blocklist source")
-    print(f"    {cyan('allow add')} <domain>  Whitelist a domain")
-    print(f"    {cyan('allow remove')} <domain>")
-    print(f"    {cyan('allow list')}          Show whitelisted domains")
-    print(f"    {cyan('deny add')} <domain>   Blacklist a domain")
-    print(f"    {cyan('deny remove')} <domain>")
-    print(f"    {cyan('deny list')}           Show blacklisted domains")
-    print()
-
-    print(f"  {bold('Options:')}")
-    print(f"    {cyan('--version')}           Show version")
-    print(f"    {cyan('--help')}, {cyan('-h')}         Show this help")
-    print()
-
-    print(f"  {bold('Examples:')}")
-    print(f"    {dim('$')} sudo macblock install")
-    print(f"    {dim('$')} sudo macblock enable")
-    print(f"    {dim('$')} sudo macblock pause 30m")
-    print(f"    {dim('$')} macblock status")
-    print()
+def _get_help_context(args: list[str]) -> str | None:
+    """Extract command context for help display.
+    
+    Returns the command (and subcommand if applicable) that help was requested for.
+    """
+    clean = _remove_help_flags(args)
+    if not clean:
+        return None
+    
+    cmd = clean[0]
+    # Handle subcommands for sources, allow, deny
+    if cmd in ("sources", "allow", "deny") and len(clean) >= 2:
+        subcmd = clean[1]
+        if subcmd not in ("-h", "--help"):
+            return f"{cmd} {subcmd}"
+    
+    return cmd
 
 
 def _needs_root(cmd: str, args: dict) -> bool:
@@ -106,20 +81,41 @@ def _exec_sudo(argv: list[str]) -> None:
 
 
 def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
-    """Simple argument parser."""
+    """Simple argument parser.
+    
+    Returns (command, args_dict). If help was requested, args will contain
+    {"_help": True, "_help_context": "command"} and command will be "_help".
+    """
     args: dict = {}
 
     if not argv:
         return None, args
 
-    # Handle --version and --help first
-    if argv[0] in ("--version", "-V"):
+    # Handle --version first (can appear anywhere)
+    if "--version" in argv or "-V" in argv:
         print(f"macblock {__version__}")
         sys.exit(0)
 
-    if argv[0] in ("--help", "-h"):
-        _print_help()
-        sys.exit(0)
+    # Check for help flag anywhere in args
+    if _has_help_flag(argv):
+        help_context = _get_help_context(argv)
+        args["_help"] = True
+        args["_help_context"] = help_context
+        return "_help", args
+
+    # Handle explicit "help" command
+    if argv[0] == "help":
+        rest = argv[1:]
+        if rest:
+            # "help sources set" -> "sources set"
+            if len(rest) >= 2 and rest[0] in ("sources", "allow", "deny"):
+                args["_help_context"] = f"{rest[0]} {rest[1]}"
+            else:
+                args["_help_context"] = rest[0]
+        else:
+            args["_help_context"] = None
+        args["_help"] = True
+        return "_help", args
 
     cmd = argv[0]
     rest = argv[1:]
@@ -220,7 +216,16 @@ def main(argv: list[str] | None = None) -> int:
 
         # Show help if no command provided
         if cmd is None:
-            _print_help()
+            show_main_help()
+            return 0
+
+        # Handle help requests
+        if cmd == "_help":
+            help_context = args.get("_help_context")
+            if help_context:
+                show_command_help(help_context)
+            else:
+                show_main_help()
             return 0
 
         # Check if we need root
