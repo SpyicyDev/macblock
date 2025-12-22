@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import errno
 import os
 import pwd
 import shutil
+import socket
 import sys
+import time
 from pathlib import Path
 
 from macblock import __version__
-from macblock.colors import print_info, print_success, print_warning
+from macblock.colors import print_error, print_info, print_success, print_warning
 from macblock.constants import (
     APP_LABEL,
+    DNSMASQ_LISTEN_ADDR,
+    DNSMASQ_LISTEN_PORT,
     DNSMASQ_USER,
     LAUNCHD_DIR,
     LAUNCHD_DAEMON_PLIST,
@@ -36,6 +41,7 @@ from macblock.constants import (
 )
 from macblock.dnsmasq import render_dnsmasq_conf
 from macblock.errors import MacblockError
+from macblock.exec import run
 from macblock.fs import atomic_write_text, ensure_dir
 from macblock.launchd import bootout_label, bootout_system, bootstrap_system, enable_service, kickstart, service_exists
 from macblock.state import State, load_state, save_state_atomic
@@ -52,7 +58,29 @@ def _chown_user(path: Path, user: str) -> None:
     os.chown(path, pw.pw_uid, pw.pw_gid)
 
 
-def _find_dnsmasq_bin() -> str:
+def _check_port_available(host: str, port: int) -> tuple[bool, str | None]:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1)
+        s.bind((host, port))
+        s.close()
+        return True, None
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE:
+            r = run(["/usr/sbin/lsof", "-i", f":{port}", "-P", "-n"])
+            if r.returncode == 0 and r.stdout.strip():
+                lines = r.stdout.strip().split("\n")
+                if len(lines) > 1:
+                    parts = lines[1].split()
+                    if parts:
+                        return False, parts[0]
+            return False, "unknown process"
+        return False, str(e)
+    except Exception as e:
+        return False, str(e)
+
+
+def _check_dnsmasq_installed() -> tuple[bool, str | None]:
     candidates = [
         os.environ.get("MACBLOCK_DNSMASQ_BIN", ""),
         "/opt/homebrew/opt/dnsmasq/sbin/dnsmasq",
@@ -62,7 +90,14 @@ def _find_dnsmasq_bin() -> str:
     ]
     for c in candidates:
         if c and Path(c).exists():
-            return c
+            return True, c
+    return False, None
+
+
+def _find_dnsmasq_bin() -> str:
+    found, path = _check_dnsmasq_installed()
+    if found and path:
+        return path
     raise MacblockError("dnsmasq not found; install with 'brew install dnsmasq'")
 
 
@@ -204,7 +239,102 @@ def _cleanup_old_install() -> None:
             pass
 
 
-def do_install(force: bool = False) -> int:
+def _run_preflight_checks(force: bool) -> tuple[str, str]:
+    print_info("running pre-flight checks...")
+
+    dnsmasq_installed, dnsmasq_bin = _check_dnsmasq_installed()
+    if not dnsmasq_installed or dnsmasq_bin is None:
+        raise MacblockError(
+            "dnsmasq is not installed.\n"
+            "  Install with: brew install dnsmasq\n"
+            "  Then re-run: sudo macblock install"
+        )
+
+    port_available, blocker = _check_port_available(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT)
+    if not port_available:
+        if blocker and "dnsmasq" in blocker.lower():
+            if not force:
+                raise MacblockError(
+                    f"Port {DNSMASQ_LISTEN_PORT} is in use by {blocker}.\n"
+                    "  This may be from a previous installation.\n"
+                    "  Run: sudo macblock install --force"
+                )
+        else:
+            raise MacblockError(
+                f"Port {DNSMASQ_LISTEN_PORT} is already in use by: {blocker}\n"
+                "  macblock needs this port for DNS.\n"
+                "  Stop the conflicting service and retry."
+            )
+
+    macblock_bin = _find_macblock_bin()
+
+    return dnsmasq_bin, macblock_bin
+
+
+def _wait_for_dnsmasq_ready(timeout: float = 5.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.5)
+            s.connect((DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT))
+            s.close()
+            return True
+        except OSError:
+            pass
+        time.sleep(0.2)
+    return False
+
+
+def _wait_for_daemon_ready(timeout: float = 5.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if VAR_DB_DAEMON_PID.exists():
+            try:
+                pid = int(VAR_DB_DAEMON_PID.read_text(encoding="utf-8").strip())
+                if pid > 1:
+                    r = run(["/bin/ps", "-p", str(pid)])
+                    if r.returncode == 0:
+                        return True
+            except Exception:
+                pass
+        time.sleep(0.2)
+    return False
+
+
+def _verify_services_running() -> tuple[bool, list[str]]:
+    issues: list[str] = []
+
+    if not _wait_for_dnsmasq_ready(timeout=5.0):
+        issues.append(f"dnsmasq not listening on {DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT}")
+        if SYSTEM_LOG_DIR.exists():
+            err_log = SYSTEM_LOG_DIR / "dnsmasq.err.log"
+            if err_log.exists():
+                try:
+                    content = err_log.read_text(encoding="utf-8").strip()
+                    if content:
+                        last_lines = "\n".join(content.split("\n")[-5:])
+                        issues.append(f"dnsmasq error log:\n{last_lines}")
+                except Exception:
+                    pass
+
+    if not _wait_for_daemon_ready(timeout=5.0):
+        issues.append("daemon not running (PID file missing or process not found)")
+        if SYSTEM_LOG_DIR.exists():
+            err_log = SYSTEM_LOG_DIR / "daemon.err.log"
+            if err_log.exists():
+                try:
+                    content = err_log.read_text(encoding="utf-8").strip()
+                    if content:
+                        last_lines = "\n".join(content.split("\n")[-5:])
+                        issues.append(f"daemon error log:\n{last_lines}")
+                except Exception:
+                    pass
+
+    return len(issues) == 0, issues
+
+
+def do_install(force: bool = False, skip_update: bool = False) -> int:
     existing = _detect_existing_install()
     if existing:
         msg = "existing macblock installation detected"
@@ -214,14 +344,15 @@ def do_install(force: bool = False) -> int:
         else:
             raise MacblockError(msg + "; run: sudo macblock uninstall (or pass --force)")
 
-    dnsmasq_bin = _find_dnsmasq_bin()
-    macblock_bin = _find_macblock_bin()
+    dnsmasq_bin, macblock_bin = _run_preflight_checks(force)
 
     print_info(f"using dnsmasq: {dnsmasq_bin}")
     print_info(f"using macblock: {macblock_bin}")
 
+    print_info("creating system user...")
     ensure_system_user(DNSMASQ_USER)
 
+    print_info("creating directories...")
     ensure_dir(SYSTEM_SUPPORT_DIR, mode=0o755)
     ensure_dir(SYSTEM_CONFIG_DIR, mode=0o755)
     ensure_dir(SYSTEM_LOG_DIR, mode=0o755)
@@ -233,6 +364,8 @@ def do_install(force: bool = False) -> int:
     _chown_root(SYSTEM_LOG_DIR)
     _chown_root(VAR_DB_DIR)
     _chown_user(VAR_DB_DNSMASQ_DIR, DNSMASQ_USER)
+
+    print_info("writing configuration files...")
 
     if not SYSTEM_WHITELIST_FILE.exists():
         atomic_write_text(SYSTEM_WHITELIST_FILE, "", mode=0o644)
@@ -292,13 +425,36 @@ def do_install(force: bool = False) -> int:
     atomic_write_text(LAUNCHD_DAEMON_PLIST, daemon_plist, mode=0o644)
     _chown_root(LAUNCHD_DAEMON_PLIST)
 
-    print_info("starting launchd services")
+    print_info("starting launchd services...")
 
     _bootstrap(LAUNCHD_DNSMASQ_PLIST, f"{APP_LABEL}.dnsmasq")
     _bootstrap(LAUNCHD_DAEMON_PLIST, f"{APP_LABEL}.daemon")
 
+    print_info("verifying services...")
+    services_ok, issues = _verify_services_running()
+
+    if not services_ok:
+        print_error("service verification failed:")
+        for issue in issues:
+            print_error(f"  {issue}")
+        print_warning("installation may be incomplete; run 'macblock doctor' for diagnostics")
+        return 1
+
     print_success(f"installed macblock {__version__}")
-    print_warning("blocking not enabled by default; run: sudo macblock enable")
+
+    if not skip_update:
+        print_info("downloading blocklist (this may take a moment)...")
+        try:
+            from macblock.blocklists import update_blocklist
+            update_blocklist()
+        except Exception as e:
+            print_warning(f"blocklist download failed: {e}")
+            print_warning("run 'sudo macblock update' manually to download blocklist")
+
+    print_success("installation complete!")
+    print_info("next steps:")
+    print_info("  1. Run 'macblock doctor' to verify installation")
+    print_info("  2. Run 'sudo macblock enable' to start blocking")
     return 0
 
 

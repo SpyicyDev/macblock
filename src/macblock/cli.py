@@ -45,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_install = sub.add_parser("install", help="Install system integration (root)")
     p_install.add_argument("--force", action="store_true")
+    p_install.add_argument("--skip-update", action="store_true", help="Skip automatic blocklist download")
 
     p_uninstall = sub.add_parser("uninstall", help="Uninstall system integration (root)")
     p_uninstall.add_argument("--force", action="store_true")
@@ -146,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
                 stderr=bool(args.stderr),
             )
         if args.cmd == "install":
-            return do_install(force=bool(args.force))
+            return do_install(force=bool(args.force), skip_update=bool(getattr(args, "skip_update", False)))
         if args.cmd == "uninstall":
             return do_uninstall(force=bool(args.force))
         if args.cmd == "enable":

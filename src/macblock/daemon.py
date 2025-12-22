@@ -14,6 +14,7 @@ from macblock.constants import (
     SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
     SYSTEM_STATE_FILE,
     VAR_DB_DAEMON_PID,
+    VAR_DB_DAEMON_READY,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )
@@ -31,11 +32,17 @@ from macblock.system_dns import (
 
 
 _trigger_apply = False
+_shutdown_requested = False
 
 
 def _handle_sigusr1(signum: int, frame: object) -> None:
     global _trigger_apply
     _trigger_apply = True
+
+
+def _handle_sigterm(signum: int, frame: object) -> None:
+    global _shutdown_requested
+    _shutdown_requested = True
 
 
 def _is_forward_ip(ip: str) -> bool:
@@ -46,22 +53,47 @@ def _is_forward_ip(ip: str) -> bool:
     return True
 
 
-def _hup_dnsmasq() -> None:
-    if not VAR_DB_DNSMASQ_PID.exists():
-        return
-
-    try:
-        pid = int(VAR_DB_DNSMASQ_PID.read_text(encoding="utf-8").strip())
-    except Exception:
-        return
-
+def _is_process_running(pid: int) -> bool:
     if pid <= 1:
-        return
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _read_pid_file(path) -> int | None:
+    if not path.exists():
+        return None
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip())
+        return pid if pid > 1 else None
+    except Exception:
+        return None
+
+
+def _hup_dnsmasq() -> bool:
+    pid = _read_pid_file(VAR_DB_DNSMASQ_PID)
+    if pid is None:
+        return False
+
+    if not _is_process_running(pid):
+        print(f"dnsmasq pid {pid} not running, removing stale pid file", file=sys.stderr)
+        try:
+            VAR_DB_DNSMASQ_PID.unlink()
+        except Exception:
+            pass
+        return False
 
     try:
         os.kill(pid, signal.SIGHUP)
-    except (ProcessLookupError, PermissionError):
-        pass
+        return True
+    except (ProcessLookupError, PermissionError) as e:
+        print(f"failed to HUP dnsmasq: {e}", file=sys.stderr)
+        return False
 
 
 def _load_exclude_services() -> set[str]:
@@ -148,24 +180,28 @@ def _backup_service_dns(service: str, device: str | None, dns_backup: dict) -> N
     }
 
 
-def _enable_blocking(state: State, managed_infos: list) -> State:
+def _enable_blocking(state: State, managed_infos: list) -> tuple[State, list[str]]:
     dns_backup = dict(state.dns_backup)
     managed_names: list[str] = []
+    failures: list[str] = []
 
     for info in managed_infos:
         managed_names.append(info.name)
         _backup_service_dns(info.name, info.device, dns_backup)
-        set_dns_servers(info.name, ["127.0.0.1"])
+        if not set_dns_servers(info.name, ["127.0.0.1"]):
+            failures.append(f"failed to set DNS for {info.name}")
 
-    return replace_state(
+    new_state = replace_state(
         state,
         dns_backup=dns_backup,
         managed_services=managed_names,
     )
+    return new_state, failures
 
 
-def _disable_blocking(state: State, managed_names: list[str]) -> None:
+def _disable_blocking(state: State, managed_names: list[str]) -> list[str]:
     to_restore = state.managed_services if state.managed_services else managed_names
+    failures: list[str] = []
 
     for service in to_restore:
         backup_data = state.dns_backup.get(service)
@@ -175,12 +211,30 @@ def _disable_blocking(state: State, managed_names: list[str]) -> None:
         dns = backup_data.get("dns")
         search = backup_data.get("search")
 
-        set_dns_servers(service, list(dns) if isinstance(dns, list) else None)
-        set_search_domains(service, list(search) if isinstance(search, list) else None)
+        if not set_dns_servers(service, list(dns) if isinstance(dns, list) else None):
+            failures.append(f"failed to restore DNS for {service}")
+        if not set_search_domains(service, list(search) if isinstance(search, list) else None):
+            failures.append(f"failed to restore search domains for {service}")
+
+    return failures
 
 
-def _apply_state() -> None:
+def _verify_dns_state(state: State, managed_infos: list, should_be_localhost: bool) -> list[str]:
+    issues: list[str] = []
+    for info in managed_infos:
+        current = get_dns_servers(info.name)
+        if should_be_localhost:
+            if current != ["127.0.0.1"]:
+                issues.append(f"{info.name}: expected 127.0.0.1, got {current}")
+        else:
+            if current == ["127.0.0.1"]:
+                issues.append(f"{info.name}: still pointing to localhost")
+    return issues
+
+
+def _apply_state() -> tuple[bool, list[str]]:
     state = load_state(SYSTEM_STATE_FILE)
+    issues: list[str] = []
 
     now = int(time.time())
     paused = state.resume_at_epoch is not None and state.resume_at_epoch > now
@@ -193,13 +247,23 @@ def _apply_state() -> None:
     managed_names = [info.name for info in managed_infos]
 
     if state.enabled and not paused:
-        state = _enable_blocking(state, managed_infos)
+        state, failures = _enable_blocking(state, managed_infos)
+        issues.extend(failures)
+        should_be_localhost = True
     else:
-        _disable_blocking(state, managed_names)
+        failures = _disable_blocking(state, managed_names)
+        issues.extend(failures)
+        should_be_localhost = False
 
     save_state_atomic(SYSTEM_STATE_FILE, state)
     _update_upstreams(state)
     _hup_dnsmasq()
+
+    time.sleep(0.1)
+    verification_issues = _verify_dns_state(state, managed_infos, should_be_localhost)
+    issues.extend(verification_issues)
+
+    return len(issues) == 0, issues
 
 
 def _seconds_until_resume(state: State) -> float | None:
@@ -230,6 +294,11 @@ def _write_pid_file() -> None:
     VAR_DB_DAEMON_PID.write_text(f"{os.getpid()}\n", encoding="utf-8")
 
 
+def _write_ready_file() -> None:
+    VAR_DB_DAEMON_READY.parent.mkdir(parents=True, exist_ok=True)
+    VAR_DB_DAEMON_READY.write_text(f"{int(time.time())}\n", encoding="utf-8")
+
+
 def _remove_pid_file() -> None:
     try:
         VAR_DB_DAEMON_PID.unlink()
@@ -237,25 +306,85 @@ def _remove_pid_file() -> None:
         pass
 
 
+def _remove_ready_file() -> None:
+    try:
+        VAR_DB_DAEMON_READY.unlink()
+    except Exception:
+        pass
+
+
+def _check_stale_daemon() -> bool:
+    pid = _read_pid_file(VAR_DB_DAEMON_PID)
+    if pid is None:
+        return False
+
+    if pid == os.getpid():
+        return False
+
+    if _is_process_running(pid):
+        print(f"another daemon is already running (pid={pid})", file=sys.stderr)
+        return True
+
+    print(f"removing stale pid file (pid={pid} not running)", file=sys.stderr)
+    _remove_pid_file()
+    _remove_ready_file()
+    return False
+
+
 def run_daemon() -> int:
-    global _trigger_apply
+    global _trigger_apply, _shutdown_requested
+
+    if _check_stale_daemon():
+        return 1
 
     signal.signal(signal.SIGUSR1, _handle_sigusr1)
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+    signal.signal(signal.SIGINT, _handle_sigterm)
+
     _write_pid_file()
 
     print(f"macblock daemon started (pid={os.getpid()})", file=sys.stderr)
 
+    consecutive_failures = 0
+    max_consecutive_failures = 5
+
     try:
-        while True:
+        while not _shutdown_requested:
             _trigger_apply = False
 
             try:
-                _apply_state()
+                success, issues = _apply_state()
+                if success:
+                    consecutive_failures = 0
+                    if not VAR_DB_DAEMON_READY.exists():
+                        _write_ready_file()
+                        print("daemon ready", file=sys.stderr)
+                else:
+                    consecutive_failures += 1
+                    for issue in issues:
+                        print(f"state apply issue: {issue}", file=sys.stderr)
+
+                    if consecutive_failures >= max_consecutive_failures:
+                        print(f"too many consecutive failures ({consecutive_failures}), continuing anyway", file=sys.stderr)
+                        consecutive_failures = 0
+
             except Exception as e:
+                consecutive_failures += 1
                 print(f"error applying state: {e}", file=sys.stderr)
+
+                if consecutive_failures >= max_consecutive_failures:
+                    print(f"too many consecutive failures ({consecutive_failures}), continuing anyway", file=sys.stderr)
+                    consecutive_failures = 0
+
+            if _shutdown_requested:
+                break
 
             state = load_state(SYSTEM_STATE_FILE)
             timeout = _seconds_until_resume(state)
+
+            if timeout is not None and timeout > 60:
+                timeout = 60.0
+
             _wait_for_network_change(timeout)
 
             if _trigger_apply:
@@ -263,8 +392,9 @@ def run_daemon() -> int:
 
     except KeyboardInterrupt:
         print("daemon interrupted", file=sys.stderr)
-        return 0
     finally:
+        print("daemon shutting down", file=sys.stderr)
+        _remove_ready_file()
         _remove_pid_file()
 
     return 0
