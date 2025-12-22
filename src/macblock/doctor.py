@@ -4,6 +4,7 @@ import errno
 import socket
 import time
 
+from macblock import __version__
 from macblock.colors import bold, error, info, success, warning
 from macblock.constants import (
     APP_LABEL,
@@ -11,12 +12,12 @@ from macblock.constants import (
     DNSMASQ_LISTEN_PORT,
     LAUNCHD_DIR,
     LAUNCHD_DNSMASQ_PLIST,
-    SYSTEM_BIN_DIR,
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_DNSMASQ_CONF,
     SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
     SYSTEM_RAW_BLOCKLIST_FILE,
     SYSTEM_STATE_FILE,
+    SYSTEM_VERSION_FILE,
     VAR_DB_DAEMON_PID,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
@@ -52,20 +53,34 @@ def _tcp_connect_ok(host: str, port: int) -> bool:
             pass
 
 
+def _check_version() -> tuple[bool, str | None]:
+    if not SYSTEM_VERSION_FILE.exists():
+        return False, None
+
+    try:
+        installed = SYSTEM_VERSION_FILE.read_text(encoding="utf-8").strip()
+    except Exception:
+        return False, None
+
+    if installed != __version__:
+        return False, installed
+
+    return True, installed
+
+
 def run_diagnostics() -> int:
     print(bold("macblock doctor"))
 
     daemon_plist = LAUNCHD_DIR / f"{APP_LABEL}.daemon.plist"
-    macblockd_bin = SYSTEM_BIN_DIR / "macblockd.py"
 
     checks = [
         ("state", SYSTEM_STATE_FILE),
+        ("version", SYSTEM_VERSION_FILE),
         ("dnsmasq.conf", SYSTEM_DNSMASQ_CONF),
         ("blocklist.raw", SYSTEM_RAW_BLOCKLIST_FILE),
         ("blocklist.conf", SYSTEM_BLOCKLIST_FILE),
         ("upstream.conf", VAR_DB_UPSTREAM_CONF),
         ("dns.exclude_services", SYSTEM_DNS_EXCLUDE_SERVICES_FILE),
-        ("macblockd.py", macblockd_bin),
         ("plist dnsmasq", LAUNCHD_DNSMASQ_PLIST),
         ("plist daemon", daemon_plist),
     ]
@@ -76,6 +91,15 @@ def run_diagnostics() -> int:
         ok, p = _check_file(path)
         ok_all = ok_all and ok
         print(f"{name}: " + (success(p) if ok else error(p)))
+
+    version_ok, installed_version = _check_version()
+    if not version_ok:
+        if installed_version is None:
+            print(warning("version file missing; run 'sudo macblock install --force'"))
+        else:
+            print(warning(f"version mismatch: installed={installed_version}, cli={__version__}"))
+            print(warning("run 'sudo macblock install --force' to upgrade"))
+        ok_all = False
 
     if SYSTEM_BLOCKLIST_FILE.exists():
         try:
@@ -142,12 +166,12 @@ def run_diagnostics() -> int:
         daemon_pid_ok = r_ps.returncode == 0
 
     if daemon_pid is None:
-        print(warning(f"macblockd pid-file missing: {VAR_DB_DAEMON_PID}"))
+        print(warning(f"daemon pid-file missing: {VAR_DB_DAEMON_PID}"))
     elif not daemon_pid_ok:
         ok_all = False
-        print(error(f"macblockd pid not running: {daemon_pid}"))
+        print(error(f"daemon pid not running: {daemon_pid}"))
     else:
-        print(info("macblockd pid: ") + success(str(daemon_pid)))
+        print(info("daemon pid: ") + success(str(daemon_pid)))
 
     now = int(time.time())
     paused = st.resume_at_epoch is not None and st.resume_at_epoch > now
@@ -177,5 +201,6 @@ def run_diagnostics() -> int:
             print(warning("Encrypted DNS may bypass system DNS settings"))
 
     print(info("label: ") + APP_LABEL)
+    print(info("version: ") + __version__)
 
     return 0 if ok_all else 1

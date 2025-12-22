@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import os
 import pwd
+import shutil
+import sys
 from pathlib import Path
 
+from macblock import __version__
 from macblock.colors import print_info, print_success, print_warning
 from macblock.constants import (
     APP_LABEL,
@@ -13,7 +16,6 @@ from macblock.constants import (
     LAUNCHD_DNSMASQ_PLIST,
     LAUNCHD_STATE_PLIST,
     LAUNCHD_UPSTREAMS_PLIST,
-    SYSTEM_BIN_DIR,
     SYSTEM_BLACKLIST_FILE,
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_CONFIG_DIR,
@@ -23,6 +25,7 @@ from macblock.constants import (
     SYSTEM_RESOLVER_DIR,
     SYSTEM_STATE_FILE,
     SYSTEM_SUPPORT_DIR,
+    SYSTEM_VERSION_FILE,
     SYSTEM_WHITELIST_FILE,
     SYSTEM_LOG_DIR,
     VAR_DB_DAEMON_PID,
@@ -33,23 +36,18 @@ from macblock.constants import (
 )
 from macblock.dnsmasq import render_dnsmasq_conf
 from macblock.errors import MacblockError
-from macblock.exec import run
 from macblock.fs import atomic_write_text, ensure_dir
 from macblock.launchd import bootout_label, bootout_system, bootstrap_system, enable_service, kickstart, service_exists
 from macblock.state import State, load_state, save_state_atomic
 from macblock.system_dns import ServiceDnsBackup, restore_from_backup
-from macblock.templates import read_template
 from macblock.users import delete_system_user, ensure_system_user
 
 
-def _render_template(name: str, mapping: dict[str, str]) -> str:
-    text = read_template(name)
-    for k, v in mapping.items():
-        text = text.replace("{{" + k + "}}", v)
-    return text
+def _chown_root(path: Path) -> None:
+    os.chown(path, 0, 0)
 
 
-def _chown(path: Path, user: str) -> None:
+def _chown_user(path: Path, user: str) -> None:
     pw = pwd.getpwnam(user)
     os.chown(path, pw.pw_uid, pw.pw_gid)
 
@@ -63,74 +61,83 @@ def _find_dnsmasq_bin() -> str:
         "/usr/local/sbin/dnsmasq",
     ]
     for c in candidates:
-        if not c:
-            continue
-        if Path(c).exists():
+        if c and Path(c).exists():
             return c
     raise MacblockError("dnsmasq not found; install with 'brew install dnsmasq'")
 
 
-def _require_system_python3() -> None:
-    python3 = Path("/usr/bin/python3")
-    if not python3.exists():
-        raise MacblockError(
-            "System /usr/bin/python3 is required (try: xcode-select --install). "
-            "macblock installs root launchd jobs that run via /usr/bin/python3."
-        )
-
-
-def _write_helpers() -> None:
-    ensure_dir(SYSTEM_BIN_DIR, mode=0o755)
-
-    mapping = {
-        "APP_LABEL": APP_LABEL,
-        "SYSTEM_STATE_FILE": str(SYSTEM_STATE_FILE),
-        "UPSTREAM_OUT": str(VAR_DB_UPSTREAM_CONF),
-        "DNSMASQ_PID_FILE": str(VAR_DB_DNSMASQ_PID),
-        "DAEMON_PID_FILE": str(VAR_DB_DAEMON_PID),
-        "DNS_EXCLUDE_SERVICES_FILE": str(SYSTEM_DNS_EXCLUDE_SERVICES_FILE),
-        "RESOLVER_DIR": str(SYSTEM_RESOLVER_DIR),
-    }
-
-    helpers: list[tuple[str, Path, int]] = [
-        ("macblockd.py.tmpl", SYSTEM_BIN_DIR / "macblockd.py", 0o755),
+def _find_macblock_bin() -> str:
+    candidates = [
+        os.environ.get("MACBLOCK_BIN", ""),
+        "/opt/homebrew/bin/macblock",
+        "/usr/local/bin/macblock",
+        shutil.which("macblock"),
     ]
+    for c in candidates:
+        if c and Path(c).exists():
+            return c
 
-    for src, dst, mode in helpers:
-        atomic_write_text(dst, _render_template(src, mapping), mode=mode)
-        os.chown(dst, 0, 0)
+    exe = sys.executable
+    if exe:
+        venv_bin = Path(exe).parent / "macblock"
+        if venv_bin.exists():
+            return str(venv_bin)
 
-
-def _write_launchd_plists(dnsmasq_bin: str) -> None:
-    dnsmasq_plist = _render_template(
-        "launchd-dnsmasq.plist",
-        {
-            "APP_LABEL": APP_LABEL,
-            "DNSMASQ_BIN": dnsmasq_bin,
-            "DNSMASQ_CONF": str(SYSTEM_DNSMASQ_CONF),
-            "DNSMASQ_USER": DNSMASQ_USER,
-            "DNSMASQ_STDOUT": str(SYSTEM_LOG_DIR / "dnsmasq.out.log"),
-            "DNSMASQ_STDERR": str(SYSTEM_LOG_DIR / "dnsmasq.err.log"),
-        },
-    )
+    raise MacblockError("macblock binary not found in PATH")
 
 
-    daemon_plist = _render_template(
-        "launchd-macblockd.plist",
-        {
-            "APP_LABEL": APP_LABEL,
-            "MACBLOCKD_BIN": str(SYSTEM_BIN_DIR / "macblockd.py"),
-            "MACBLOCKD_STDOUT": str(SYSTEM_LOG_DIR / "daemon.out.log"),
-            "MACBLOCKD_STDERR": str(SYSTEM_LOG_DIR / "daemon.err.log"),
-        },
-    )
+def _render_dnsmasq_plist(dnsmasq_bin: str) -> str:
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{APP_LABEL}.dnsmasq</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{dnsmasq_bin}</string>
+    <string>--keep-in-foreground</string>
+    <string>-C</string>
+    <string>{SYSTEM_DNSMASQ_CONF}</string>
+  </array>
+  <key>StandardOutPath</key>
+  <string>{SYSTEM_LOG_DIR}/dnsmasq.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>{SYSTEM_LOG_DIR}/dnsmasq.err.log</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>
+'''
 
-    for path, content in [
-        (LAUNCHD_DNSMASQ_PLIST, dnsmasq_plist),
-        (LAUNCHD_DAEMON_PLIST, daemon_plist),
-    ]:
-        atomic_write_text(path, content, mode=0o644)
-        os.chown(path, 0, 0)
+
+def _render_daemon_plist(macblock_bin: str) -> str:
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{APP_LABEL}.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{macblock_bin}</string>
+    <string>daemon</string>
+  </array>
+  <key>StandardOutPath</key>
+  <string>{SYSTEM_LOG_DIR}/daemon.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>{SYSTEM_LOG_DIR}/daemon.err.log</string>
+  <key>WorkingDirectory</key>
+  <string>/var/empty</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>
+'''
 
 
 def _bootstrap(plist: Path, label: str) -> None:
@@ -143,6 +150,7 @@ def _detect_existing_install() -> list[str]:
     leftovers: list[str] = []
 
     old_pf_plist = LAUNCHD_DIR / f"{APP_LABEL}.pf.plist"
+    old_bin_dir = SYSTEM_SUPPORT_DIR / "bin"
 
     for p in [
         SYSTEM_SUPPORT_DIR,
@@ -153,6 +161,7 @@ def _detect_existing_install() -> list[str]:
         LAUNCHD_UPSTREAMS_PLIST,
         LAUNCHD_STATE_PLIST,
         old_pf_plist,
+        old_bin_dir,
     ]:
         if p.exists():
             leftovers.append(str(p))
@@ -160,58 +169,93 @@ def _detect_existing_install() -> list[str]:
     return leftovers
 
 
+def _cleanup_old_install() -> None:
+    old_pf_plist = LAUNCHD_DIR / f"{APP_LABEL}.pf.plist"
+    old_bin_dir = SYSTEM_SUPPORT_DIR / "bin"
+
+    for label in [f"{APP_LABEL}.state", f"{APP_LABEL}.upstreams", f"{APP_LABEL}.pf"]:
+        try:
+            bootout_label(label)
+        except Exception:
+            pass
+
+    for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST]:
+        if plist.exists():
+            try:
+                bootout_system(plist)
+            except Exception:
+                pass
+
+    for p in [
+        old_bin_dir / "apply-state.py",
+        old_bin_dir / "update-upstreams.py",
+        old_bin_dir / "macblockd.py",
+    ]:
+        if p.exists():
+            try:
+                p.unlink()
+            except Exception:
+                pass
+
+    if old_bin_dir.exists():
+        try:
+            old_bin_dir.rmdir()
+        except Exception:
+            pass
+
+
 def do_install(force: bool = False) -> int:
     existing = _detect_existing_install()
     if existing:
-        msg = "existing macblock installation detected: " + ", ".join(existing)
+        msg = "existing macblock installation detected"
         if force:
-            print_warning(msg)
+            print_warning(msg + " - upgrading")
+            _cleanup_old_install()
         else:
-            raise MacblockError(msg + ". Run: sudo macblock uninstall (or pass --force).")
+            raise MacblockError(msg + "; run: sudo macblock uninstall (or pass --force)")
 
-    _require_system_python3()
     dnsmasq_bin = _find_dnsmasq_bin()
+    macblock_bin = _find_macblock_bin()
+
+    print_info(f"using dnsmasq: {dnsmasq_bin}")
+    print_info(f"using macblock: {macblock_bin}")
 
     ensure_system_user(DNSMASQ_USER)
 
     ensure_dir(SYSTEM_SUPPORT_DIR, mode=0o755)
     ensure_dir(SYSTEM_CONFIG_DIR, mode=0o755)
-    ensure_dir(SYSTEM_BIN_DIR, mode=0o755)
     ensure_dir(SYSTEM_LOG_DIR, mode=0o755)
     ensure_dir(VAR_DB_DIR, mode=0o755)
     ensure_dir(VAR_DB_DNSMASQ_DIR, mode=0o755)
 
-    os.chown(SYSTEM_SUPPORT_DIR, 0, 0)
-    os.chown(SYSTEM_CONFIG_DIR, 0, 0)
-    os.chown(SYSTEM_BIN_DIR, 0, 0)
-    os.chown(SYSTEM_LOG_DIR, 0, 0)
-    os.chown(VAR_DB_DIR, 0, 0)
-
-    _chown(VAR_DB_DNSMASQ_DIR, DNSMASQ_USER)
+    _chown_root(SYSTEM_SUPPORT_DIR)
+    _chown_root(SYSTEM_CONFIG_DIR)
+    _chown_root(SYSTEM_LOG_DIR)
+    _chown_root(VAR_DB_DIR)
+    _chown_user(VAR_DB_DNSMASQ_DIR, DNSMASQ_USER)
 
     if not SYSTEM_WHITELIST_FILE.exists():
         atomic_write_text(SYSTEM_WHITELIST_FILE, "", mode=0o644)
-        os.chown(SYSTEM_WHITELIST_FILE, 0, 0)
+        _chown_root(SYSTEM_WHITELIST_FILE)
 
     if not SYSTEM_BLACKLIST_FILE.exists():
         atomic_write_text(SYSTEM_BLACKLIST_FILE, "", mode=0o644)
-        os.chown(SYSTEM_BLACKLIST_FILE, 0, 0)
+        _chown_root(SYSTEM_BLACKLIST_FILE)
 
     if not SYSTEM_BLOCKLIST_FILE.exists():
         atomic_write_text(SYSTEM_BLOCKLIST_FILE, "", mode=0o644)
-        os.chown(SYSTEM_BLOCKLIST_FILE, 0, 0)
+        _chown_root(SYSTEM_BLOCKLIST_FILE)
 
     if not SYSTEM_RAW_BLOCKLIST_FILE.exists():
         atomic_write_text(SYSTEM_RAW_BLOCKLIST_FILE, "", mode=0o644)
-        os.chown(SYSTEM_RAW_BLOCKLIST_FILE, 0, 0)
+        _chown_root(SYSTEM_RAW_BLOCKLIST_FILE)
 
     if not VAR_DB_UPSTREAM_CONF.exists():
         atomic_write_text(VAR_DB_UPSTREAM_CONF, "server=1.1.1.1\nserver=8.8.8.8\n", mode=0o644)
-
-    os.chown(VAR_DB_UPSTREAM_CONF, 0, 0)
+    _chown_root(VAR_DB_UPSTREAM_CONF)
 
     atomic_write_text(SYSTEM_DNSMASQ_CONF, render_dnsmasq_conf(), mode=0o644)
-    os.chown(SYSTEM_DNSMASQ_CONF, 0, 0)
+    _chown_root(SYSTEM_DNSMASQ_CONF)
 
     if not SYSTEM_DNS_EXCLUDE_SERVICES_FILE.exists():
         atomic_write_text(
@@ -219,7 +263,7 @@ def do_install(force: bool = False) -> int:
             "# One network service name per line (exact match)\n",
             mode=0o644,
         )
-        os.chown(SYSTEM_DNS_EXCLUDE_SERVICES_FILE, 0, 0)
+        _chown_root(SYSTEM_DNS_EXCLUDE_SERVICES_FILE)
 
     if not SYSTEM_STATE_FILE.exists():
         save_state_atomic(
@@ -234,34 +278,27 @@ def do_install(force: bool = False) -> int:
                 resolver_domains=[],
             ),
         )
-        os.chown(SYSTEM_STATE_FILE, 0, 0)
+        _chown_root(SYSTEM_STATE_FILE)
 
-    _write_helpers()
-    _write_launchd_plists(dnsmasq_bin)
+    atomic_write_text(SYSTEM_VERSION_FILE, f"{__version__}\n", mode=0o644)
+    _chown_root(SYSTEM_VERSION_FILE)
 
-    old_pf_plist = LAUNCHD_DIR / f"{APP_LABEL}.pf.plist"
+    dnsmasq_plist = _render_dnsmasq_plist(dnsmasq_bin)
+    daemon_plist = _render_daemon_plist(macblock_bin)
 
-    if force:
-        for label in [f"{APP_LABEL}.state", f"{APP_LABEL}.upstreams"]:
-            try:
-                bootout_label(label)
-            except Exception:
-                pass
+    atomic_write_text(LAUNCHD_DNSMASQ_PLIST, dnsmasq_plist, mode=0o644)
+    _chown_root(LAUNCHD_DNSMASQ_PLIST)
 
-        for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST]:
-            if plist.exists():
-                try:
-                    bootout_system(plist)
-                except Exception:
-                    pass
+    atomic_write_text(LAUNCHD_DAEMON_PLIST, daemon_plist, mode=0o644)
+    _chown_root(LAUNCHD_DAEMON_PLIST)
 
-    print_info("installing launchd jobs")
+    print_info("starting launchd services")
 
     _bootstrap(LAUNCHD_DNSMASQ_PLIST, f"{APP_LABEL}.dnsmasq")
     _bootstrap(LAUNCHD_DAEMON_PLIST, f"{APP_LABEL}.daemon")
 
-    print_warning("macblock is not enabled by install; run: sudo macblock enable")
-    print_success("installed")
+    print_success(f"installed macblock {__version__}")
+    print_warning("blocking not enabled by default; run: sudo macblock enable")
     return 0
 
 
@@ -320,6 +357,7 @@ def do_uninstall(force: bool = False) -> int:
             raise
 
     old_pf_plist = LAUNCHD_DIR / f"{APP_LABEL}.pf.plist"
+    old_bin_dir = SYSTEM_SUPPORT_DIR / "bin"
 
     for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST]:
         try:
@@ -334,9 +372,9 @@ def do_uninstall(force: bool = False) -> int:
             p.unlink()
 
     for p in [
-        SYSTEM_BIN_DIR / "apply-state.py",
-        SYSTEM_BIN_DIR / "update-upstreams.py",
-        SYSTEM_BIN_DIR / "macblockd.py",
+        old_bin_dir / "apply-state.py",
+        old_bin_dir / "update-upstreams.py",
+        old_bin_dir / "macblockd.py",
     ]:
         if p.exists():
             p.unlink()
@@ -364,6 +402,7 @@ def do_uninstall(force: bool = False) -> int:
         SYSTEM_WHITELIST_FILE,
         SYSTEM_BLACKLIST_FILE,
         SYSTEM_STATE_FILE,
+        SYSTEM_VERSION_FILE,
         SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
         SYSTEM_LOG_DIR / "dnsmasq.out.log",
         SYSTEM_LOG_DIR / "dnsmasq.err.log",
@@ -377,7 +416,7 @@ def do_uninstall(force: bool = False) -> int:
         if p.exists():
             p.unlink()
 
-    for d in [SYSTEM_BIN_DIR, SYSTEM_CONFIG_DIR, SYSTEM_LOG_DIR, SYSTEM_SUPPORT_DIR]:
+    for d in [old_bin_dir, SYSTEM_CONFIG_DIR, SYSTEM_LOG_DIR, SYSTEM_SUPPORT_DIR]:
         if d.exists():
             try:
                 d.rmdir()

@@ -35,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status", help="Show status")
     sub.add_parser("doctor", help="Run diagnostics")
+    sub.add_parser("daemon", help=argparse.SUPPRESS)
 
     p_logs = sub.add_parser("logs", help="Show logs")
     p_logs.add_argument("--component", choices=["daemon", "dnsmasq"], default="daemon")
@@ -133,6 +134,9 @@ def main(argv: list[str] | None = None) -> int:
             return show_status()
         if args.cmd == "doctor":
             return run_diagnostics()
+        if args.cmd == "daemon":
+            from macblock.daemon import run_daemon
+            return run_daemon()
         if args.cmd == "logs":
             show_logs = importlib.import_module("macblock.logs").show_logs
             return show_logs(

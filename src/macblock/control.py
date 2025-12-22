@@ -4,7 +4,7 @@ import os
 import signal
 import time
 
-from macblock.colors import print_success
+from macblock.colors import print_info, print_success, print_warning
 from macblock.constants import (
     APP_LABEL,
     LAUNCHD_DAEMON_PLIST,
@@ -15,6 +15,7 @@ from macblock.constants import (
 from macblock.errors import MacblockError
 from macblock.launchd import kickstart
 from macblock.state import load_state, replace_state, save_state_atomic
+from macblock.system_dns import compute_managed_services, get_dns_servers
 
 
 def _parse_duration_seconds(value: str) -> int:
@@ -54,14 +55,55 @@ def _signal_daemon() -> bool:
         return False
 
 
-def _trigger_daemon() -> None:
+def _trigger_daemon() -> bool:
     if _signal_daemon():
-        return
+        return True
 
     try:
         kickstart(f"{APP_LABEL}.daemon")
+        return True
     except Exception:
-        pass
+        return False
+
+
+def _wait_for_dns_localhost(timeout: float = 3.0) -> bool:
+    managed = compute_managed_services()
+    if not managed:
+        return True
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        all_localhost = True
+        for info in managed:
+            dns = get_dns_servers(info.name)
+            if dns != ["127.0.0.1"]:
+                all_localhost = False
+                break
+        if all_localhost:
+            return True
+        time.sleep(0.3)
+
+    return False
+
+
+def _wait_for_dns_restored(timeout: float = 3.0) -> bool:
+    managed = compute_managed_services()
+    if not managed:
+        return True
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        all_restored = True
+        for info in managed:
+            dns = get_dns_servers(info.name)
+            if dns == ["127.0.0.1"]:
+                all_restored = False
+                break
+        if all_restored:
+            return True
+        time.sleep(0.3)
+
+    return False
 
 
 def do_enable() -> int:
@@ -72,7 +114,12 @@ def do_enable() -> int:
         SYSTEM_STATE_FILE,
         replace_state(st, enabled=True, resume_at_epoch=None),
     )
-    _trigger_daemon()
+
+    if not _trigger_daemon():
+        print_warning("could not signal daemon")
+
+    if not _wait_for_dns_localhost():
+        print_warning("DNS may not have been redirected yet; check 'macblock doctor'")
 
     print_success("enabled")
     return 0
@@ -86,7 +133,12 @@ def do_disable() -> int:
         SYSTEM_STATE_FILE,
         replace_state(st, enabled=False, resume_at_epoch=None),
     )
-    _trigger_daemon()
+
+    if not _trigger_daemon():
+        print_warning("could not signal daemon")
+
+    if not _wait_for_dns_restored():
+        print_warning("DNS may not have been restored yet; check 'macblock doctor'")
 
     print_success("disabled")
     return 0
@@ -102,8 +154,15 @@ def do_pause(duration: str) -> int:
         SYSTEM_STATE_FILE,
         replace_state(st, enabled=True, resume_at_epoch=resume_at),
     )
-    _trigger_daemon()
 
+    if not _trigger_daemon():
+        print_warning("could not signal daemon")
+
+    if not _wait_for_dns_restored():
+        print_warning("DNS may not have been restored yet; check 'macblock doctor'")
+
+    mins = seconds // 60
+    print_info(f"paused for {mins} minutes")
     print_success("paused")
     return 0
 
@@ -116,7 +175,12 @@ def do_resume() -> int:
         SYSTEM_STATE_FILE,
         replace_state(st, enabled=True, resume_at_epoch=None),
     )
-    _trigger_daemon()
+
+    if not _trigger_daemon():
+        print_warning("could not signal daemon")
+
+    if not _wait_for_dns_localhost():
+        print_warning("DNS may not have been redirected yet; check 'macblock doctor'")
 
     print_success("resumed")
     return 0

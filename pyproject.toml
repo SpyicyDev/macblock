@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "macblock"
-version = "0.0.0"
+version = "0.1.0"
 description = "Local DNS sinkhole for macOS using dnsmasq"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -26,9 +26,6 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-macblock = ["templates/*.conf", "templates/*.plist", "templates/*.tmpl"]
 
 [tool.pyright]
 extraPaths = ["src"]

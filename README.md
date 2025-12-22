@@ -1,78 +1,102 @@
 # macblock
 
-Local DNS sinkhole for macOS using `dnsmasq` (on `127.0.0.1:53`) plus per-network-service DNS rewriting to `127.0.0.1` via `networksetup`.
+Local DNS sinkhole for macOS using `dnsmasq` on `127.0.0.1:53` with automatic system DNS configuration.
 
-`macblock` maintains a local `dnsmasq` instance and dynamically generates `dnsmasq` upstream `server=` rules (including split-DNS) from macOS resolver state.
+## Features
 
-## Status
+- Blocks ads, trackers, and malware at the DNS level
+- Automatic DNS configuration for all network interfaces
+- Split-DNS support (preserves VPN/corporate DNS routing)
+- Pause/resume with automatic timers
+- Whitelist and blacklist management
+- Multiple blocklist sources (StevenBlack, HaGeZi, OISD)
 
-This repo implements:
-- `sudo macblock install` installs `launchd` jobs plus root-owned state/config locations.
-- `sudo macblock enable|disable|pause|resume` toggles system DNS to localhost and schedules pause/resume.
-- `sudo macblock update` downloads and compiles a hosts-format blocklist.
-- `sudo macblock allow|deny` manages whitelist/blacklist and recompiles.
-- `macblock logs` tails daemon logs for visibility.
+## Install
 
-## Install (dev)
-
-```bash
-uv sync --dev
-uv run macblock status
-```
-
-## Install (planned Homebrew)
-
-This repo includes a tap scaffold under `../homebrew-macblock` in this workspace.
-
-Typical flow will be:
+### Via Homebrew (recommended)
 
 ```bash
-brew tap <org>/macblock
+brew tap SpyicyDev/macblock
 brew install macblock
 sudo macblock install
 sudo macblock update
 sudo macblock enable
 ```
 
-## Important notes
+### From source
 
-- Do not run `sudo brew`. Homebrew expects to manage files as your user.
-- `sudo macblock ...` installs and manages system integration under `/Library`, `/etc`, and `/var/db`. Homebrew uninstall does not remove those.
-- If Homebrew fails with a message like "Could not remove ... .reinstall", that directory is usually root-owned due to a previous root run. Fix it by following Homebrew's printed path (either `sudo rm -rf <path>` or `sudo chown -R $(whoami):admin <path>`).
+```bash
+git clone https://github.com/SpyicyDev/macblock.git
+cd macblock
+uv sync
+uv run macblock --version
+```
 
 ## Commands
 
-- `macblock status`
-- `macblock doctor`
-- `macblock logs [--component daemon|dnsmasq] [--follow]`
-- `sudo macblock install [--force]`
-- `sudo macblock uninstall [--force]`
-- `sudo macblock enable|disable`
-- `sudo macblock pause 10m|2h|1d`
-- `sudo macblock resume`
-- `sudo macblock update [--source stevenblack|https://…]`
-- `sudo macblock allow add|remove|list <domain>`
-- `sudo macblock deny add|remove|list <domain>`
+| Command | Description |
+|---------|-------------|
+| `macblock status` | Show current status |
+| `macblock doctor` | Run diagnostics |
+| `macblock logs [--follow]` | View daemon logs |
+| `sudo macblock install [--force]` | Install system integration |
+| `sudo macblock uninstall` | Remove system integration |
+| `sudo macblock enable` | Enable blocking |
+| `sudo macblock disable` | Disable blocking |
+| `sudo macblock pause 10m\|2h\|1d` | Temporarily disable |
+| `sudo macblock resume` | Resume blocking |
+| `sudo macblock update [--source X]` | Update blocklist |
+| `sudo macblock sources list` | List available blocklist sources |
+| `sudo macblock sources set <source>` | Set blocklist source |
+| `sudo macblock allow add\|remove\|list <domain>` | Manage whitelist |
+| `sudo macblock deny add\|remove\|list <domain>` | Manage blacklist |
+| `macblock test <domain>` | Test if domain is blocked |
+
+## How it works
+
+1. **dnsmasq** runs on `127.0.0.1:53` and handles all DNS queries
+2. **macblock daemon** monitors network changes and manages DNS settings
+3. When enabled, system DNS is set to `127.0.0.1` for all managed interfaces
+4. Blocked domains return `NXDOMAIN`; allowed queries forward to upstream DNS
+
+## Blocklist sources
+
+| Source | Description |
+|--------|-------------|
+| `stevenblack` | StevenBlack Unified (default) |
+| `stevenblack-fakenews` | StevenBlack + Fakenews |
+| `stevenblack-gambling` | StevenBlack + Gambling |
+| `hagezi-pro` | HaGeZi Pro |
+| `hagezi-ultimate` | HaGeZi Ultimate |
+| `oisd-small` | OISD Small |
+| `oisd-big` | OISD Big |
+
+Or use a custom URL: `sudo macblock update --source https://example.com/hosts.txt`
 
 ## Uninstall
 
-Remove system integration first:
-
 ```bash
 sudo macblock uninstall
-```
-
-Then remove the Homebrew package:
-
-```bash
 brew uninstall macblock dnsmasq
 ```
 
-If you run `brew uninstall` first, `macblock` may no longer be available to remove the system integration components.
+## Troubleshooting
 
-## Notes
+Run `macblock doctor` to diagnose issues:
 
-- Encrypted DNS (DoH/DoT): can bypass system DNS settings entirely.
-- VPNs: may install scoped resolvers; if you see odd behavior, check `macblock doctor` and `macblock logs`.
+```bash
+macblock doctor
+```
 
-See `SECURITY.md` for threat model and design constraints.
+Common issues:
+- **dnsmasq not running**: Check `macblock logs --component dnsmasq`
+- **DNS not redirected**: Verify with `scutil --dns`
+- **Blocklist empty**: Run `sudo macblock update`
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the threat model and design constraints.
+
+## License
+
+MIT
