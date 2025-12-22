@@ -24,7 +24,9 @@ def group_exists(name: str) -> bool:
 
 
 def _list_ids(kind: str) -> set[int]:
-    out = _dscl(["-list", f"/{kind}", "UniqueID" if kind == "Users" else "PrimaryGroupID"])
+    out = _dscl(
+        ["-list", f"/{kind}", "UniqueID" if kind == "Users" else "PrimaryGroupID"]
+    )
     ids: set[int] = set()
     for line in out.splitlines():
         parts = re.split(r"\s+", line.strip())

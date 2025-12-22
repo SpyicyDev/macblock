@@ -34,7 +34,12 @@ def _write_set(path: Path, values: set[str]) -> None:
 def _recompile() -> int:
     if not SYSTEM_RAW_BLOCKLIST_FILE.exists():
         raise MacblockError("blocklist not downloaded; run: sudo macblock update")
-    count = compile_blocklist(SYSTEM_RAW_BLOCKLIST_FILE, SYSTEM_WHITELIST_FILE, SYSTEM_BLACKLIST_FILE, SYSTEM_BLOCKLIST_FILE)
+    count = compile_blocklist(
+        SYSTEM_RAW_BLOCKLIST_FILE,
+        SYSTEM_WHITELIST_FILE,
+        SYSTEM_BLACKLIST_FILE,
+        SYSTEM_BLOCKLIST_FILE,
+    )
     reload_dnsmasq()
     return count
 

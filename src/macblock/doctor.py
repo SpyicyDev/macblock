@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import errno
 import os
 import socket
 import time
@@ -14,7 +13,6 @@ from macblock.constants import (
     LAUNCHD_DNSMASQ_PLIST,
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_DNSMASQ_CONF,
-    SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
     SYSTEM_RAW_BLOCKLIST_FILE,
     SYSTEM_STATE_FILE,
     SYSTEM_VERSION_FILE,
@@ -27,27 +25,21 @@ from macblock.exec import run
 from macblock.state import load_state
 from macblock.system_dns import get_dns_servers
 from macblock.ui import (
-    bold,
     cyan,
     dim,
-    green,
     header,
     list_item,
     list_item_fail,
     list_item_ok,
     list_item_warn,
     red,
-    result_fail,
     result_success,
     status_err,
     status_info,
     status_ok,
     status_warn,
     subheader,
-    yellow,
-    SYMBOL_OK,
     SYMBOL_FAIL,
-    SYMBOL_WARN,
 )
 
 
@@ -137,7 +129,9 @@ def run_diagnostics() -> int:
         else:
             status_warn("Installed", installed_version)
             status_info("CLI", __version__)
-            issues.append(f"version mismatch (installed={installed_version}, cli={__version__})")
+            issues.append(
+                f"version mismatch (installed={installed_version}, cli={__version__})"
+            )
             suggestions.append("sudo macblock install --force")
     else:
         status_ok("Version", __version__)
@@ -207,7 +201,9 @@ def run_diagnostics() -> int:
         if server_count == 0:
             status_err("Servers", "0 (none configured)")
             issues.append("no upstream DNS servers configured")
-            suggestions.append("sudo launchctl kickstart -k system/com.local.macblock.daemon")
+            suggestions.append(
+                "sudo launchctl kickstart -k system/com.local.macblock.daemon"
+            )
         else:
             status_ok("Servers", str(server_count))
     else:
@@ -223,7 +219,9 @@ def run_diagnostics() -> int:
     elif not _is_process_running(dnsmasq_pid):
         status_err("PID", f"{dnsmasq_pid} (not running)")
         issues.append(f"dnsmasq process {dnsmasq_pid} not running")
-        suggestions.append("sudo launchctl kickstart -k system/com.local.macblock.dnsmasq")
+        suggestions.append(
+            "sudo launchctl kickstart -k system/com.local.macblock.dnsmasq"
+        )
     else:
         status_ok("PID", str(dnsmasq_pid))
         r_cmd = run(["/bin/ps", "-p", str(dnsmasq_pid), "-o", "command="])
@@ -253,7 +251,9 @@ def run_diagnostics() -> int:
     elif not _is_process_running(daemon_pid):
         status_err("PID", f"{daemon_pid} (not running)")
         issues.append(f"daemon process {daemon_pid} not running")
-        suggestions.append("sudo launchctl kickstart -k system/com.local.macblock.daemon")
+        suggestions.append(
+            "sudo launchctl kickstart -k system/com.local.macblock.daemon"
+        )
     else:
         status_ok("PID", str(daemon_pid))
 

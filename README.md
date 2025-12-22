@@ -28,8 +28,30 @@ sudo macblock enable
 ```bash
 git clone https://github.com/SpyicyDev/macblock.git
 cd macblock
-uv sync
+uv sync --dev
 uv run macblock --version
+```
+
+### Development
+
+Recommended tooling:
+
+```bash
+brew install just direnv
+```
+
+Then:
+
+```bash
+# auto-sync deps when uv.lock/pyproject.toml change
+
+direnv allow
+
+# install pre-commit hooks
+just setup
+
+# run the full local CI suite
+just ci
 ```
 
 ## Commands

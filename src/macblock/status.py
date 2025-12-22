@@ -16,12 +16,8 @@ from macblock.exec import run
 from macblock.state import load_state
 from macblock.system_dns import get_dns_servers
 from macblock.ui import (
-    bold,
-    dim,
     dns_status,
-    green,
     header,
-    red,
     status_active,
     status_err,
     status_inactive,
@@ -29,9 +25,6 @@ from macblock.ui import (
     status_ok,
     status_warn,
     subheader,
-    yellow,
-    SYMBOL_OK,
-    SYMBOL_FAIL,
 )
 
 
@@ -50,6 +43,7 @@ def _process_running(pid: int) -> bool:
         return False
     try:
         import os
+
         os.kill(pid, 0)
         return True
     except ProcessLookupError:

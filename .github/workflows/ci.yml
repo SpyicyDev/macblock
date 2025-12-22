@@ -7,8 +7,13 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  check:
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
     steps:
       - uses: actions/checkout@v4
 
@@ -16,19 +21,22 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Run pyright
+      - name: Check formatting
+        run: uv run ruff format --check src/macblock tests
+
+      - name: Lint
+        run: uv run ruff check src/macblock tests --ignore E402
+
+      - name: Type check
         run: uv run pyright src/macblock
 
-      - name: Run ruff
-        run: uv run ruff check src/macblock --ignore E402
-
       - name: Run tests
-        run: uv run python -m unittest discover -v tests/
+        run: uv run pytest
 
       - name: Verify CLI
         run: uv run macblock --version

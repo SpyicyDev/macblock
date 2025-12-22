@@ -10,7 +10,11 @@ sys.dont_write_bytecode = True
 from macblock import __version__
 from macblock.errors import MacblockError, PrivilegeError, UnsupportedPlatformError
 from macblock.install import do_install, do_uninstall
-from macblock.blocklists import list_blocklist_sources, set_blocklist_source, update_blocklist
+from macblock.blocklists import (
+    list_blocklist_sources,
+    set_blocklist_source,
+    update_blocklist,
+)
 from macblock.control import do_disable, do_enable, do_pause, do_resume
 from macblock.doctor import run_diagnostics
 from macblock.dns_test import test_domain
@@ -39,25 +43,35 @@ def _remove_help_flags(args: list[str]) -> list[str]:
 
 def _get_help_context(args: list[str]) -> str | None:
     """Extract command context for help display.
-    
+
     Returns the command (and subcommand if applicable) that help was requested for.
     """
     clean = _remove_help_flags(args)
     if not clean:
         return None
-    
+
     cmd = clean[0]
     # Handle subcommands for sources, allow, deny
     if cmd in ("sources", "allow", "deny") and len(clean) >= 2:
         subcmd = clean[1]
         if subcmd not in ("-h", "--help"):
             return f"{cmd} {subcmd}"
-    
+
     return cmd
 
 
 def _needs_root(cmd: str, args: dict) -> bool:
-    if cmd in {"install", "uninstall", "enable", "disable", "pause", "resume", "update", "allow", "deny"}:
+    if cmd in {
+        "install",
+        "uninstall",
+        "enable",
+        "disable",
+        "pause",
+        "resume",
+        "update",
+        "allow",
+        "deny",
+    }:
         return True
     return cmd == "sources" and args.get("sources_cmd") == "set"
 
@@ -82,7 +96,7 @@ def _exec_sudo(argv: list[str]) -> None:
 
 def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
     """Simple argument parser.
-    
+
     Returns (command, args_dict). If help was requested, args will contain
     {"_help": True, "_help_context": "command"} and command will be "_help".
     """
@@ -238,6 +252,7 @@ def main(argv: list[str] | None = None) -> int:
             return run_diagnostics()
         if cmd == "daemon":
             from macblock.daemon import run_daemon
+
             return run_daemon()
         if cmd == "logs":
             show_logs = importlib.import_module("macblock.logs").show_logs
@@ -248,7 +263,9 @@ def main(argv: list[str] | None = None) -> int:
                 stderr=bool(args.get("stderr", False)),
             )
         if cmd == "install":
-            return do_install(force=bool(args.get("force")), skip_update=bool(args.get("skip_update")))
+            return do_install(
+                force=bool(args.get("force")), skip_update=bool(args.get("skip_update"))
+            )
         if cmd == "uninstall":
             return do_uninstall(force=bool(args.get("force")))
         if cmd == "enable":
@@ -262,7 +279,9 @@ def main(argv: list[str] | None = None) -> int:
         if cmd == "test":
             return test_domain(args["domain"])
         if cmd == "update":
-            return update_blocklist(source=args.get("source"), sha256=args.get("sha256"))
+            return update_blocklist(
+                source=args.get("source"), sha256=args.get("sha256")
+            )
         if cmd == "sources":
             if args.get("sources_cmd") == "list":
                 return list_blocklist_sources()
@@ -281,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
             return list_blacklist()
 
         print(f"error: unknown command: {cmd}", file=sys.stderr)
-        print(f"Run 'macblock --help' for usage.", file=sys.stderr)
+        print("Run 'macblock --help' for usage.", file=sys.stderr)
         return 2
 
     except UnsupportedPlatformError as e:

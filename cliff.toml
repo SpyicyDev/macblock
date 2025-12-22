@@ -1,0 +1,45 @@
+[remote.github]
+owner = "SpyicyDev"
+repo = "macblock"
+
+[changelog]
+header = """
+# Changelog
+
+"""
+body = """
+{%- macro remote_url() -%}
+  https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}
+{%- endmacro -%}
+
+{% if version %}\
+    ## [{{ version | trim_start_matches(pat=\"v\") }}]({{ self::remote_url() }}/releases/tag/{{ version }}) - {{ timestamp | date(format=\"%Y-%m-%d\") }}
+{% else %}\
+    ## [Unreleased]
+{% endif %}\
+
+{% for group, commits in commits | group_by(attribute=\"group\") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {{ commit.message | upper_first }}
+{% endfor %}
+{% endfor %}
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = "^doc", group = "Documentation" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Refactoring" },
+  { message = "^test", group = "Testing" },
+  { message = "^chore\\(release\\)", skip = true },
+  { message = "^chore|^ci", group = "Miscellaneous" },
+]
+filter_commits = false
+tag_pattern = "v[0-9].*"
+sort_commits = "newest"

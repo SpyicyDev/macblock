@@ -47,7 +47,11 @@ def _interpret_result(stdout: str, domain: str) -> tuple[str, str]:
 def test_domain(domain: str) -> int:
     dig = shutil.which("dig")
     if dig is None:
-        print(error("dig not found; install bind tools or use 'scutil --dns' and a browser test"))
+        print(
+            error(
+                "dig not found; install bind tools or use 'scutil --dns' and a browser test"
+            )
+        )
         return 1
 
     print(info("query"))

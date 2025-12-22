@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from .colors import Colors
-from ._version import __version__
+from macblock import __version__
 
 
 def format_help(text: str) -> str:

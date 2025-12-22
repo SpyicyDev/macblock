@@ -1,3 +1,8 @@
-from macblock._version import __version__
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("macblock")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 
 __all__ = ["__version__"]

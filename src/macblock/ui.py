@@ -166,13 +166,20 @@ def list_item_warn(text: str, indent: int = 2) -> None:
     print(f"{' ' * indent}{yellow(SYMBOL_WARN)} {text}")
 
 
-def dns_status(service: str, servers: list[str] | None, is_active: bool = True, is_blocking: bool = False) -> None:
+def dns_status(
+    service: str,
+    servers: list[str] | None,
+    is_active: bool = True,
+    is_blocking: bool = False,
+) -> None:
     active_symbol = green(SYMBOL_ACTIVE) if is_active else dim(SYMBOL_INACTIVE)
 
     if servers is None or len(servers) == 0:
         dns_str = dim("DHCP")
     elif servers == ["127.0.0.1"]:
-        dns_str = f"{green(SYMBOL_ARROW)} 127.0.0.1" + (f" {dim('(blocking)')}" if is_blocking else "")
+        dns_str = f"{green(SYMBOL_ARROW)} 127.0.0.1" + (
+            f" {dim('(blocking)')}" if is_blocking else ""
+        )
     else:
         dns_str = ", ".join(servers)
 
@@ -231,7 +238,11 @@ class Spinner:
         if _is_tty():
             self._clear_line()
             if self._final_symbol and self._final_message:
-                colored_symbol = _color(self._final_symbol, self._final_color) if self._final_color else self._final_symbol
+                colored_symbol = (
+                    _color(self._final_symbol, self._final_color)
+                    if self._final_color
+                    else self._final_symbol
+                )
                 print(f"  {colored_symbol} {self._final_message}")
             elif self._final_message:
                 print(f"  {self._final_message}")

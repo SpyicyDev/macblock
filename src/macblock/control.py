@@ -16,7 +16,7 @@ from macblock.errors import MacblockError
 from macblock.launchd import kickstart
 from macblock.state import load_state, replace_state, save_state_atomic
 from macblock.system_dns import compute_managed_services, get_dns_servers
-from macblock.ui import Spinner, result_fail, result_success, step_warn
+from macblock.ui import Spinner, result_success, step_warn
 
 
 DEFAULT_TIMEOUT = 10.0

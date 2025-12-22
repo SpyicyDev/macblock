@@ -16,7 +16,16 @@ dependencies = []
 dev = [
   "ruff>=0.8.0",
   "pyright>=1.1.390",
+  "pytest>=8.0.0",
+  "pytest-cov>=5.0.0",
+  "pre-commit>=3.7.0",
 ]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v --tb=short"
 
 [project.scripts]
 macblock = "macblock.cli:main"

@@ -3,13 +3,13 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
 
 jobs:
-  test:
+  check:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,29 +23,34 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Run pyright
+      - name: Check formatting
+        run: uv run ruff format --check src/macblock tests
+
+      - name: Lint
+        run: uv run ruff check src/macblock tests --ignore E402
+
+      - name: Type check
         run: uv run pyright src/macblock
 
-      - name: Run ruff
-        run: uv run ruff check src/macblock --ignore E402
-
       - name: Run tests
-        run: uv run python -m unittest discover -v tests/
+        run: uv run pytest
 
       - name: Verify version matches tag
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          PKG_VERSION=$(uv run python -c "from macblock import __version__; print(__version__)")
+          PKG_VERSION=$(uv run python -c "from importlib.metadata import version; print(version('macblock'))")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "Error: Tag version ($TAG_VERSION) does not match package version ($PKG_VERSION)"
             exit 1
           fi
 
   release:
-    needs: test
-    runs-on: macos-latest
+    needs: check
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -56,82 +61,44 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Get version from tag
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-
       - name: Build package
         run: uv build
+
+      - name: Generate release notes
+        uses: orhun/git-cliff-action@v4
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip header
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
+          body: ${{ steps.git-cliff.outputs.content }}
 
-  update-homebrew:
+  homebrew:
     needs: release
     runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref, '-') }}
     steps:
-      - name: Get version from tag
+      - name: Check Homebrew token
         run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-
-      - name: Wait for release tarball
-        run: sleep 10
-
-      - name: Calculate tarball SHA256
-        run: |
-          TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/v${{ env.VERSION }}.tar.gz"
-          echo "Downloading $TARBALL_URL"
-          for i in 1 2 3 4 5; do
-            SHA256=$(curl -sfL "$TARBALL_URL" | sha256sum | cut -d' ' -f1)
-            if [ -n "$SHA256" ] && [ "$SHA256" != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]; then
-              echo "SHA256=$SHA256" >> $GITHUB_ENV
-              echo "Calculated SHA256: $SHA256"
-              exit 0
-            fi
-            echo "Attempt $i failed, retrying in 5s..."
-            sleep 5
-          done
-          echo "Failed to download tarball"
-          exit 1
-
-      - name: Update Homebrew formula
-        env:
-          DEPLOY_KEY: ${{ secrets.HOMEBREW_DEPLOY_KEY }}
-        run: |
-          if [ -z "$DEPLOY_KEY" ]; then
-            echo "::warning::HOMEBREW_DEPLOY_KEY not set, skipping Homebrew update"
-            echo ""
-            echo "To enable automatic Homebrew updates, see docs/RELEASING.md"
-            exit 0
+          if [ -z "${{ secrets.HOMEBREW_TAP_TOKEN }}" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN not set; skipping Homebrew bump"
+            echo "SKIP_HOMEBREW=1" >> $GITHUB_ENV
           fi
 
-          # Set up SSH
-          mkdir -p ~/.ssh
-          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Bump Homebrew formula
+        if: ${{ env.SKIP_HOMEBREW != '1' }}
+        uses: mislav/bump-homebrew-formula-action@v3
+        with:
+          formula-name: macblock
+          formula-path: Formula/macblock.rb
+          homebrew-tap: SpyicyDev/homebrew-macblock
+          commit-message: |
+            macblock {{version}}
 
-          # Clone using SSH
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key" git clone git@github.com:SpyicyDev/homebrew-macblock.git tap
-          cd tap
-
-          # Update version and SHA256 in formula
-          sed -i "s|url '.*'|url 'https://github.com/SpyicyDev/macblock/archive/refs/tags/v${{ env.VERSION }}.tar.gz'|" Formula/macblock.rb
-          sed -i "s|sha256 '.*'|sha256 '${{ env.SHA256 }}'|" Formula/macblock.rb
-
-          # Show diff
-          git diff Formula/macblock.rb
-
-          # Commit and push
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/macblock.rb
-          git commit -m "Update to v${{ env.VERSION }}"
-          GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key" git push origin main
-
-          echo "Successfully updated Homebrew formula to v${{ env.VERSION }}"
+            Created by https://github.com/mislav/bump-homebrew-formula-action
+        env:
+          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

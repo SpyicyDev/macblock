@@ -139,14 +139,19 @@ def compute_managed_services(*, exclude: set[str] | None = None) -> list[Service
 
         if device.startswith(("utun", "ppp", "tun", "tap")):
             continue
-        if any(x in service_l for x in ("vpn", "tailscale", "wireguard", "openvpn", "anyconnect")):
+        if any(
+            x in service_l
+            for x in ("vpn", "tailscale", "wireguard", "openvpn", "anyconnect")
+        ):
             continue
 
         if device.startswith("en") or device.startswith("bridge"):
             managed.append(info)
             continue
 
-        if any(x in service_l for x in ("wi-fi", "wifi", "ethernet", "usb", "thunderbolt")):
+        if any(
+            x in service_l for x in ("wi-fi", "wifi", "ethernet", "usb", "thunderbolt")
+        ):
             managed.append(info)
 
     return sorted(managed, key=lambda x: x.name.lower())

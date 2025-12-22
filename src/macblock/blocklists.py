@@ -24,17 +24,17 @@ from macblock.state import load_state, replace_state, save_state_atomic
 from macblock.ui import (
     dim,
     green,
-    header,
     result_success,
-    result_warn,
     Spinner,
     step_done,
-    step_warn,
     SYMBOL_ACTIVE,
 )
 
 
-_domain_re = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$", re.IGNORECASE)
+_domain_re = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$",
+    re.IGNORECASE,
+)
 
 
 def normalize_domain(domain: str) -> str:
@@ -83,7 +83,9 @@ def _parse_hosts_domains(text: str) -> set[str]:
     return domains
 
 
-def compile_blocklist(raw_path: Path, whitelist_path: Path, blacklist_path: Path, out_path: Path) -> int:
+def compile_blocklist(
+    raw_path: Path, whitelist_path: Path, blacklist_path: Path, out_path: Path
+) -> int:
     raw = raw_path.read_text(encoding="utf-8") if raw_path.exists() else ""
     base = _parse_hosts_domains(raw)
 
@@ -118,7 +120,9 @@ def _download(url: str, *, expected_sha256: str | None = None) -> str:
                 break
             total += len(chunk)
             if total > _MAX_BLOCKLIST_BYTES:
-                raise MacblockError(f"blocklist too large (>{_MAX_BLOCKLIST_BYTES} bytes)")
+                raise MacblockError(
+                    f"blocklist too large (>{_MAX_BLOCKLIST_BYTES} bytes)"
+                )
             hasher.update(chunk)
             chunks.append(chunk)
 
@@ -153,7 +157,9 @@ def list_blocklist_sources() -> int:
     print()
     for key in sorted(BLOCKLIST_SOURCES.keys()):
         if key == current:
-            print(f"  {green(SYMBOL_ACTIVE)} {green(key)} - {BLOCKLIST_SOURCES[key]['name']}")
+            print(
+                f"  {green(SYMBOL_ACTIVE)} {green(key)} - {BLOCKLIST_SOURCES[key]['name']}"
+            )
         else:
             print(f"    {key} - {dim(str(BLOCKLIST_SOURCES[key]['name']))}")
     print()
@@ -209,13 +215,18 @@ def update_blocklist(source: str | None = None, sha256: str | None = None) -> in
             raise MacblockError("downloaded blocklist is empty")
 
         head = raw.lstrip()[:200].lower()
-        if head.startswith("<!doctype html") or head.startswith("<html") or "<html" in head:
+        if (
+            head.startswith("<!doctype html")
+            or head.startswith("<html")
+            or "<html" in head
+        ):
             spinner.fail("Downloaded file looks like HTML, not a blocklist")
             raise MacblockError("downloaded blocklist looks like HTML")
 
         spinner.succeed("Downloaded blocklist")
 
     # Parse and compile
+    count = 0
     with Spinner("Compiling blocklist") as spinner:
         count_raw = len(_parse_hosts_domains(raw))
         if count_raw < 1000:

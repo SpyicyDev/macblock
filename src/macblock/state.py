@@ -55,7 +55,9 @@ def load_state(path: Path) -> State:
     raw_epoch = data.get("resume_at_epoch")
     if raw_epoch is None:
         raw_iso = data.get("resume_at")
-        resume_at_epoch = _iso_to_epoch_seconds(raw_iso) if isinstance(raw_iso, str) else None
+        resume_at_epoch = (
+            _iso_to_epoch_seconds(raw_iso) if isinstance(raw_iso, str) else None
+        )
     else:
         try:
             resume_at_epoch = int(raw_epoch) if raw_epoch is not None else None
@@ -138,5 +140,7 @@ def save_state_atomic(path: Path, state: State) -> None:
     }
 
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     tmp.replace(path)

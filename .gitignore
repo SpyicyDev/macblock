@@ -4,5 +4,12 @@ __pycache__/
 dist/
 build/
 .venv/
+.direnv/
 .env/
+
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
 .DS_Store

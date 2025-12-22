@@ -81,7 +81,9 @@ def _hup_dnsmasq() -> bool:
         return False
 
     if not _is_process_running(pid):
-        print(f"dnsmasq pid {pid} not running, removing stale pid file", file=sys.stderr)
+        print(
+            f"dnsmasq pid {pid} not running, removing stale pid file", file=sys.stderr
+        )
         try:
             VAR_DB_DNSMASQ_PID.unlink()
         except Exception:
@@ -213,13 +215,17 @@ def _disable_blocking(state: State, managed_names: list[str]) -> list[str]:
 
         if not set_dns_servers(service, list(dns) if isinstance(dns, list) else None):
             failures.append(f"failed to restore DNS for {service}")
-        if not set_search_domains(service, list(search) if isinstance(search, list) else None):
+        if not set_search_domains(
+            service, list(search) if isinstance(search, list) else None
+        ):
             failures.append(f"failed to restore search domains for {service}")
 
     return failures
 
 
-def _verify_dns_state(state: State, managed_infos: list, should_be_localhost: bool) -> list[str]:
+def _verify_dns_state(
+    state: State, managed_infos: list, should_be_localhost: bool
+) -> list[str]:
     issues: list[str] = []
     for info in managed_infos:
         current = get_dns_servers(info.name)
@@ -282,38 +288,40 @@ def _seconds_until_resume(state: State) -> float | None:
 
 def _wait_for_network_change_or_signal(timeout: float | None) -> None:
     """Wait for network change notification or until signaled.
-    
+
     Uses Popen with a poll loop so we can check for signals.
     """
     global _trigger_apply, _shutdown_requested
-    
+
     cmd = ["/usr/bin/notifyutil", "-w", "com.apple.system.config.network_change"]
-    
+
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
     except Exception:
         # If we can't start notifyutil, just sleep briefly
         time.sleep(1.0)
         return
-    
+
     try:
         deadline = time.time() + timeout if timeout else None
         poll_interval = 0.25  # Check for signals every 250ms
-        
+
         while True:
             # Check if we should exit the wait
             if _trigger_apply or _shutdown_requested:
                 break
-            
+
             # Check if timeout expired
             if deadline and time.time() >= deadline:
                 break
-            
+
             # Check if process finished (network change occurred)
             ret = proc.poll()
             if ret is not None:
                 break
-            
+
             # Sleep briefly before next poll
             time.sleep(poll_interval)
     finally:
@@ -403,7 +411,10 @@ def run_daemon() -> int:
                         print(f"state apply issue: {issue}", file=sys.stderr)
 
                     if consecutive_failures >= max_consecutive_failures:
-                        print(f"too many consecutive failures ({consecutive_failures}), continuing anyway", file=sys.stderr)
+                        print(
+                            f"too many consecutive failures ({consecutive_failures}), continuing anyway",
+                            file=sys.stderr,
+                        )
                         consecutive_failures = 0
 
             except Exception as e:
@@ -411,7 +422,10 @@ def run_daemon() -> int:
                 print(f"error applying state: {e}", file=sys.stderr)
 
                 if consecutive_failures >= max_consecutive_failures:
-                    print(f"too many consecutive failures ({consecutive_failures}), continuing anyway", file=sys.stderr)
+                    print(
+                        f"too many consecutive failures ({consecutive_failures}), continuing anyway",
+                        file=sys.stderr,
+                    )
                     consecutive_failures = 0
 
             if _shutdown_requested:

@@ -42,10 +42,25 @@ from macblock.dnsmasq import render_dnsmasq_conf
 from macblock.errors import MacblockError
 from macblock.exec import run
 from macblock.fs import atomic_write_text, ensure_dir
-from macblock.launchd import bootout_label, bootout_system, bootstrap_system, enable_service, kickstart, service_exists
+from macblock.launchd import (
+    bootout_label,
+    bootout_system,
+    bootstrap_system,
+    enable_service,
+    kickstart,
+    service_exists,
+)
 from macblock.state import State, load_state, save_state_atomic
 from macblock.system_dns import ServiceDnsBackup, restore_from_backup
-from macblock.ui import Spinner, dim, result_fail, result_success, step_done, step_fail, step_warn
+from macblock.ui import (
+    Spinner,
+    dim,
+    result_fail,
+    result_success,
+    step_done,
+    step_fail,
+    step_warn,
+)
 from macblock.users import delete_system_user, ensure_system_user
 
 
@@ -122,7 +137,7 @@ def _find_macblock_bin() -> str:
 
 
 def _render_dnsmasq_plist(dnsmasq_bin: str) -> str:
-    return f'''<?xml version="1.0" encoding="UTF-8"?>
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -145,11 +160,11 @@ def _render_dnsmasq_plist(dnsmasq_bin: str) -> str:
   <true/>
 </dict>
 </plist>
-'''
+"""
 
 
 def _render_daemon_plist(macblock_bin: str) -> str:
-    return f'''<?xml version="1.0" encoding="UTF-8"?>
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -172,7 +187,7 @@ def _render_daemon_plist(macblock_bin: str) -> str:
   <true/>
 </dict>
 </plist>
-'''
+"""
 
 
 def _bootstrap(plist: Path, label: str) -> None:
@@ -214,7 +229,13 @@ def _cleanup_old_install() -> None:
         except Exception:
             pass
 
-    for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST]:
+    for plist in [
+        old_pf_plist,
+        LAUNCHD_STATE_PLIST,
+        LAUNCHD_UPSTREAMS_PLIST,
+        LAUNCHD_DNSMASQ_PLIST,
+        LAUNCHD_DAEMON_PLIST,
+    ]:
         if plist.exists():
             try:
                 bootout_system(plist, ignore_errors=True)
@@ -250,7 +271,9 @@ def _run_preflight_checks(force: bool) -> tuple[str, str]:
                 "  Then re-run: sudo macblock install"
             )
 
-        port_available, blocker = _check_port_available(DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT)
+        port_available, blocker = _check_port_available(
+            DNSMASQ_LISTEN_ADDR, DNSMASQ_LISTEN_PORT
+        )
         if not port_available:
             if blocker and "dnsmasq" in blocker.lower():
                 if not force:
@@ -312,7 +335,9 @@ def _verify_services_running() -> tuple[bool, list[str]]:
     issues: list[str] = []
 
     if not _wait_for_dnsmasq_ready(timeout=5.0):
-        issues.append(f"dnsmasq not listening on {DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT}")
+        issues.append(
+            f"dnsmasq not listening on {DNSMASQ_LISTEN_ADDR}:{DNSMASQ_LISTEN_PORT}"
+        )
         if SYSTEM_LOG_DIR.exists():
             err_log = SYSTEM_LOG_DIR / "dnsmasq.err.log"
             if err_log.exists():
@@ -349,7 +374,9 @@ def do_install(force: bool = False, skip_update: bool = False) -> int:
             step_warn("Existing installation detected - upgrading")
             _cleanup_old_install()
         else:
-            raise MacblockError("Existing macblock installation detected; run: sudo macblock uninstall (or pass --force)")
+            raise MacblockError(
+                "Existing macblock installation detected; run: sudo macblock uninstall (or pass --force)"
+            )
 
     dnsmasq_bin, macblock_bin = _run_preflight_checks(force)
 
@@ -389,7 +416,9 @@ def do_install(force: bool = False, skip_update: bool = False) -> int:
             _chown_root(SYSTEM_RAW_BLOCKLIST_FILE)
 
         if not VAR_DB_UPSTREAM_CONF.exists():
-            atomic_write_text(VAR_DB_UPSTREAM_CONF, "server=1.1.1.1\nserver=8.8.8.8\n", mode=0o644)
+            atomic_write_text(
+                VAR_DB_UPSTREAM_CONF, "server=1.1.1.1\nserver=8.8.8.8\n", mode=0o644
+            )
         _chown_root(VAR_DB_UPSTREAM_CONF)
 
         atomic_write_text(SYSTEM_DNSMASQ_CONF, render_dnsmasq_conf(), mode=0o644)
@@ -450,6 +479,7 @@ def do_install(force: bool = False, skip_update: bool = False) -> int:
         with Spinner("Downloading blocklist") as spinner:
             try:
                 from macblock.blocklists import update_blocklist
+
                 result = update_blocklist()
                 if result == 0:
                     spinner.succeed("Blocklist downloaded")
@@ -461,7 +491,7 @@ def do_install(force: bool = False, skip_update: bool = False) -> int:
 
     result_success(f"Installed macblock {__version__}")
     print()
-    print(f"  Next steps:")
+    print("  Next steps:")
     print(f"    1. Run {dim('macblock doctor')} to verify")
     print(f"    2. Run {dim('sudo macblock enable')} to start blocking")
     print()
@@ -538,7 +568,13 @@ def do_uninstall(force: bool = False) -> int:
     old_bin_dir = SYSTEM_SUPPORT_DIR / "bin"
 
     with Spinner("Stopping services") as spinner:
-        for plist in [old_pf_plist, LAUNCHD_STATE_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST]:
+        for plist in [
+            old_pf_plist,
+            LAUNCHD_STATE_PLIST,
+            LAUNCHD_UPSTREAMS_PLIST,
+            LAUNCHD_DNSMASQ_PLIST,
+            LAUNCHD_DAEMON_PLIST,
+        ]:
             try:
                 if plist.exists():
                     bootout_system(plist, ignore_errors=True)
@@ -547,7 +583,13 @@ def do_uninstall(force: bool = False) -> int:
         spinner.succeed("Services stopped")
 
     with Spinner("Removing files") as spinner:
-        for p in [LAUNCHD_DNSMASQ_PLIST, LAUNCHD_DAEMON_PLIST, LAUNCHD_UPSTREAMS_PLIST, LAUNCHD_STATE_PLIST, old_pf_plist]:
+        for p in [
+            LAUNCHD_DNSMASQ_PLIST,
+            LAUNCHD_DAEMON_PLIST,
+            LAUNCHD_UPSTREAMS_PLIST,
+            LAUNCHD_STATE_PLIST,
+            old_pf_plist,
+        ]:
             if p.exists():
                 p.unlink()
 
