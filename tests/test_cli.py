@@ -35,7 +35,7 @@ def test_parser_install_force():
 
 def test_parser_no_args():
     cmd, _ = _parse_args([])
-    assert cmd is None
+    assert cmd == "status"
 
 
 def test_parser_sources_list():

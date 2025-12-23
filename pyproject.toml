@@ -10,7 +10,9 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "macblock contributors" }]
 keywords = ["dns", "ad-blocker", "dnsmasq", "macos"]
-dependencies = []
+dependencies = [
+    "rich>=14.2.0",
+]
 
 [dependency-groups]
 dev = [
@@ -38,3 +40,6 @@ where = ["src"]
 
 [tool.pyright]
 extraPaths = ["src"]
+venvPath = "."
+venv = ".venv"
+useLibraryCodeForTypes = false
