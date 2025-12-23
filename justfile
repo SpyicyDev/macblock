@@ -80,14 +80,15 @@ release version:
     git cliff --config cliff.toml --tag "v{{version}}" --output CHANGELOG.md
 
     echo "Running checks"
-    uv sync --dev
+    uv lock
+    uv sync --dev --frozen
     uv run ruff format --check src/macblock tests
     uv run ruff check src/macblock tests
     uv run pyright src/macblock
     uv run pytest
 
     echo "Committing and tagging v{{version}}"
-    git add pyproject.toml CHANGELOG.md
+    git add pyproject.toml CHANGELOG.md uv.lock
     git commit -m "chore(release): prepare v{{version}}"
     git tag "v{{version}}"
 

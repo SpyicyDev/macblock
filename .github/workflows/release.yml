@@ -97,7 +97,7 @@ jobs:
           formula-path: Formula/macblock.rb
           homebrew-tap: SpyicyDev/homebrew-macblock
           commit-message: |
-            macblock {{version}}
+            macblock ${{ github.ref_name }}
 
             Created by https://github.com/mislav/bump-homebrew-formula-action
         env:
