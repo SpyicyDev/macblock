@@ -55,11 +55,10 @@ MAIN_HELP = """{bold}DNS-level ad blocking for macOS using dnsmasq.{reset}
   {yellow}-V, --version{reset}   Show version
 
 {bold}EXAMPLES{reset}
-  $ macblock
-  $ macblock status
-  $ macblock test example.com
   $ sudo macblock install
   $ sudo macblock enable
+  $ macblock status
+  $ macblock test example.com
   $ sudo macblock pause 30m
 
 {bold}LEARN MORE{reset}

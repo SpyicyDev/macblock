@@ -115,6 +115,20 @@ def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
         args["_help_context"] = help_context
         return "_help", args
 
+    # Handle explicit "help" command
+    if argv[0] == "help":
+        rest = argv[1:]
+        if rest:
+            # "help sources set" -> "sources set"
+            if len(rest) >= 2 and rest[0] in ("sources", "allow", "deny"):
+                args["_help_context"] = f"{rest[0]} {rest[1]}"
+            else:
+                args["_help_context"] = rest[0]
+        else:
+            args["_help_context"] = None
+        args["_help"] = True
+        return "_help", args
+
     cmd = argv[0]
     rest = argv[1:]
 
@@ -212,8 +226,10 @@ def main(argv: list[str] | None = None) -> int:
 
         cmd, args = _parse_args(argv)
 
+        # Show help if no command provided
         if cmd is None:
-            cmd = "status"
+            show_main_help()
+            return 0
 
         # Handle help requests
         if cmd == "_help":
