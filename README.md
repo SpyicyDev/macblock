@@ -1,101 +1,116 @@
 # macblock
 
-Local DNS sinkhole for macOS using `dnsmasq` on `127.0.0.1:53` with automatic system DNS configuration.
+[![CI](https://github.com/SpyicyDev/macblock/actions/workflows/ci.yml/badge.svg)](https://github.com/SpyicyDev/macblock/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+Local DNS sinkhole for macOS using `dnsmasq` on `127.0.0.1:53`, with automatic system DNS configuration and split-DNS preservation.
 
 ## Features
 
 - Blocks ads, trackers, and malware at the DNS level
-- Automatic DNS configuration for all network interfaces
-- Split-DNS support (preserves VPN/corporate DNS routing)
+- Automatically configures DNS for managed network services
+- Preserves VPN/corporate split-DNS routing
 - Pause/resume with automatic timers
-- Whitelist and blacklist management
-- Multiple blocklist sources (StevenBlack, HaGeZi, OISD)
+- Whitelist/blacklist management
+- Multiple blocklist sources (StevenBlack, HaGeZi, OISD) or a custom URL
 
 ## Install
 
 ### Via Homebrew (recommended)
 
 ```bash
+brew install SpyicyDev/macblock/macblock
+```
+
+Or, if you prefer adding the tap explicitly:
+
+```bash
 brew tap SpyicyDev/macblock
 brew install macblock
+```
+
+### Quick start
+
+`macblock` performs privileged operations (launchd + system DNS changes). You can run root-required commands with `sudo`, or omit it and let `macblock` auto-elevate.
+
+```bash
 sudo macblock install
-sudo macblock update
 sudo macblock enable
+macblock status
 ```
 
-### From source
+## Usage
 
-```bash
-git clone https://github.com/SpyicyDev/macblock.git
-cd macblock
-uv sync --dev
-uv run macblock --version
+```text
+macblock <command> [flags]
 ```
 
-### Development
+### Global flags
 
-Recommended tooling:
+- `-h`, `--help`: show help for a command
+- `-V`, `--version`: show version
 
-```bash
-brew install just direnv
-```
+### Commands
 
-Then:
+Status & diagnostics:
 
-```bash
-# auto-sync deps when uv.lock/pyproject.toml change
+- `macblock status`: show current status
+- `macblock doctor`: run diagnostics and health checks
+- `macblock logs [--component daemon|dnsmasq] [--lines N] [--follow] [--stderr]`: view logs
+- `macblock test <domain>`: test resolution against the local resolver
 
-direnv allow
+Control:
 
-# install pre-commit hooks
-just setup
+- `sudo macblock enable`: enable DNS blocking
+- `sudo macblock disable`: disable DNS blocking
+- `sudo macblock pause <duration>`: temporarily disable (e.g. `10m`, `2h`, `1d`)
+- `sudo macblock resume`: resume blocking
 
-# run the full local CI suite
-just ci
-```
+Installation & updates:
 
-## Commands
+- `sudo macblock install [--force] [--skip-update]`: install system integration
+- `sudo macblock uninstall [--force]`: remove system integration
+- `sudo macblock update [--source <name|url>] [--sha256 <hash>]`: download + compile blocklist and reload dnsmasq
 
-| Command | Description |
-|---------|-------------|
-| `macblock status` | Show current status |
-| `macblock doctor` | Run diagnostics |
-| `macblock logs [--follow]` | View daemon logs |
-| `sudo macblock install [--force]` | Install system integration |
-| `sudo macblock uninstall` | Remove system integration |
-| `sudo macblock enable` | Enable blocking |
-| `sudo macblock disable` | Disable blocking |
-| `sudo macblock pause 10m\|2h\|1d` | Temporarily disable |
-| `sudo macblock resume` | Resume blocking |
-| `sudo macblock update [--source X]` | Update blocklist |
-| `sudo macblock sources list` | List available blocklist sources |
-| `sudo macblock sources set <source>` | Set blocklist source |
-| `sudo macblock allow add\|remove\|list <domain>` | Manage whitelist |
-| `sudo macblock deny add\|remove\|list <domain>` | Manage blacklist |
-| `macblock test <domain>` | Test if domain is blocked |
+Configuration:
+
+- `macblock sources list`: list available blocklist sources
+- `sudo macblock sources set <source>`: set blocklist source
+- `macblock allow list`: list whitelisted domains
+- `sudo macblock allow add|remove <domain>`: manage whitelist
+- `macblock deny list`: list blacklisted domains
+- `sudo macblock deny add|remove <domain>`: manage blacklist
+
+Tip: `macblock <command> --help` shows per-command usage.
 
 ## How it works
 
-1. **dnsmasq** runs on `127.0.0.1:53` and handles all DNS queries
-2. **macblock daemon** monitors network changes and manages DNS settings
-3. When enabled, system DNS is set to `127.0.0.1` for all managed interfaces
-4. Blocked domains return `NXDOMAIN`; allowed queries forward to upstream DNS
+1. `dnsmasq` listens on `127.0.0.1:53` and serves DNS.
+2. The macblock daemon watches for network changes and reconciles state.
+3. When enabled, macblock sets DNS to `127.0.0.1` for a set of managed macOS network services (it intentionally skips VPN-ish services/devices).
+4. macblock generates dnsmasq upstream routing from `scutil --dns` so domain-specific resolvers (VPN/corporate split-DNS) keep working.
+5. Blocked domains are answered as `NXDOMAIN` via dnsmasq rules.
 
-## Blocklist sources
+Note: Encrypted DNS (DoH/DoT) can bypass macblock; `macblock doctor` warns if detected.
 
-| Source | Description |
-|--------|-------------|
-| `stevenblack` | StevenBlack Unified (default) |
-| `stevenblack-fakenews` | StevenBlack + Fakenews |
-| `stevenblack-gambling` | StevenBlack + Gambling |
-| `hagezi-pro` | HaGeZi Pro |
-| `hagezi-ultimate` | HaGeZi Ultimate |
-| `oisd-small` | OISD Small |
-| `oisd-big` | OISD Big |
+## `macblock test` behavior
 
-Or use a custom URL: `sudo macblock update --source https://example.com/hosts.txt`
+`macblock test <domain>` runs `dig` against `127.0.0.1:53` and uses the compiled block rules to interpret `NXDOMAIN`:
+
+- If the domain matches a block rule, `NXDOMAIN` is reported as **BLOCKED**.
+- If the domain does not match a block rule, `NXDOMAIN` is reported as **does not exist**.
+
+If you don't have `dig`, install it with:
+
+```bash
+brew install bind
+```
 
 ## Uninstall
+
+See `docs/UNINSTALL.md`.
+
+Quick version:
 
 ```bash
 sudo macblock uninstall
@@ -104,20 +119,30 @@ brew uninstall macblock dnsmasq
 
 ## Troubleshooting
 
-Run `macblock doctor` to diagnose issues:
-
-```bash
-macblock doctor
-```
-
-Common issues:
-- **dnsmasq not running**: Check `macblock logs --component dnsmasq`
-- **DNS not redirected**: Verify with `scutil --dns`
-- **Blocklist empty**: Run `sudo macblock update`
+- Run `macblock doctor` first.
+- View logs: `macblock logs --component daemon` or `macblock logs --component dnsmasq --stderr`.
+- Verify DNS state: `scutil --dns` (macblock uses this to preserve split DNS).
+- Port conflict on `:53`: `sudo lsof -i :53 -P -n`.
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for the threat model and design constraints.
+See `SECURITY.md` for the threat model and privileged footprint.
+
+## Development
+
+Tooling:
+
+```bash
+brew install just direnv
+```
+
+Then:
+
+```bash
+direnv allow
+just setup
+just ci
+```
 
 ## License
 
