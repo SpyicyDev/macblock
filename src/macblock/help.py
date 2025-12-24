@@ -47,8 +47,8 @@ MAIN_HELP = """{bold}DNS-level ad blocking for macOS using dnsmasq.{reset}
 
 {bold}CONFIGURATION{reset}
   {green}sources{reset}         Manage blocklist sources
-  {green}allow{reset}           Manage whitelisted domains {dim}(requires sudo){reset}
-  {green}deny{reset}            Manage blacklisted domains {dim}(requires sudo){reset}
+  {green}allow{reset}           Manage whitelisted domains {dim}(sudo for add/remove){reset}
+  {green}deny{reset}            Manage blacklisted domains {dim}(sudo for add/remove){reset}
 
 {bold}FLAGS{reset}
   {yellow}-h, --help{reset}      Show help for command

@@ -67,11 +67,19 @@ def _needs_root(cmd: str, args: dict) -> bool:
         "pause",
         "resume",
         "update",
-        "allow",
-        "deny",
     }:
         return True
-    return cmd == "sources" and args.get("sources_cmd") == "set"
+
+    if cmd == "sources":
+        return args.get("sources_cmd") == "set"
+
+    if cmd == "allow":
+        return args.get("allow_cmd") in ("add", "remove")
+
+    if cmd == "deny":
+        return args.get("deny_cmd") in ("add", "remove")
+
+    return False
 
 
 def _exec_sudo(argv: list[str]) -> None:
