@@ -5,6 +5,10 @@
 
 Local DNS sinkhole for macOS using `dnsmasq` on `127.0.0.1:53`, with automatic system DNS configuration and split-DNS preservation.
 
+## Vibe-coding disclaimer
+
+Most of this project was vibe-coded with careful code review and analysis of what the daemon touches. Every effort was made to ensure that the services here are using root as little as possible. If you find any holes I missed, please open an issue or a PR!
+
 ## Features
 
 - Blocks ads, trackers, and malware at the DNS level
