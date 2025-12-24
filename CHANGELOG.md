@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.1](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.1) - 2025-12-24
+
+### Bug Fixes
+
+- fix: make macblock test blocklist-aware
+
+
+### Documentation
+
+- docs: polish README and add GitHub templates
+
+
+### Miscellaneous
+
+- Revert Rich status/doctor output
+
+- Overhaul status/doctor output with Rich tables
+
 ## [0.2.0](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.0) - 2025-12-23
 
 ### Bug Fixes
