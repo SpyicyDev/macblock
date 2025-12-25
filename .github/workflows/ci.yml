@@ -38,7 +38,13 @@ jobs:
         run: uv run pyright src/macblock
 
       - name: Run tests
-        run: uv run pytest
+        run: uv run pytest --cov=macblock --cov-report=xml
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
 
       - name: Verify CLI
         run: uv run macblock --version

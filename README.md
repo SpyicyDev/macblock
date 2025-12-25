@@ -105,6 +105,23 @@ Tip: `macblock <command> --help` shows per-command usage.
 4. macblock generates dnsmasq upstream routing from `scutil --dns` so domain-specific resolvers (VPN/corporate split-DNS) keep working.
 5. Blocked domains are answered as `NXDOMAIN` via dnsmasq rules.
 
+```mermaid
+flowchart TD
+  U[User] -->|macblock CLI| CLI[macblock]
+  CLI -->|writes/updates| ST[(state.json)]
+
+  LD[launchd] --> D[macblock daemon]
+  D -->|reads/writes| ST
+  D -->|sets per-service DNS to 127.0.0.1| SCD[System DNS config]
+  D -->|generates upstream.conf from scutil --dns| UP[(upstream.conf)]
+
+  SCD --> DNS[dnsmasq on 127.0.0.1:53]
+  UP --> DNS
+  DNS -->|forwards allowed queries| R[Upstream resolvers]
+
+  NC[Network change events] --> D
+```
+
 Note: Encrypted DNS (DoH/DoT) can bypass macblock; `macblock doctor` warns if detected.
 
 ## `macblock test` behavior
