@@ -1,6 +1,7 @@
 # macblock
 
 [![CI](https://github.com/SpyicyDev/macblock/actions/workflows/ci.yml/badge.svg)](https://github.com/SpyicyDev/macblock/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/macblock.svg)](https://pypi.org/project/macblock/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Local DNS sinkhole for macOS using `dnsmasq` on `127.0.0.1:53`, with automatic system DNS configuration and split-DNS preservation.
@@ -31,6 +32,15 @@ Or, if you prefer adding the tap explicitly:
 ```bash
 brew tap SpyicyDev/formulae
 brew install macblock
+```
+
+### Via PyPI
+
+This installs the `macblock` CLI, but you still need `dnsmasq` available on your system (recommended via Homebrew):
+
+```bash
+brew install dnsmasq
+python3 -m pip install macblock
 ```
 
 ### Quick start
@@ -118,7 +128,12 @@ Quick version:
 
 ```bash
 sudo macblock uninstall
+
+# If installed via Homebrew
 brew uninstall macblock dnsmasq
+
+# If installed via PyPI
+python3 -m pip uninstall macblock
 ```
 
 ## Troubleshooting

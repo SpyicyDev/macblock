@@ -14,12 +14,20 @@ If `macblock` reports leftovers, try:
 sudo macblock uninstall --force
 ```
 
-## 2) Remove the Homebrew package
+## 2) Remove the package
 
-Once the system integration is clean, remove the Homebrew package:
+Once the system integration is clean, remove the `macblock` package.
+
+### If installed via Homebrew
 
 ```bash
 brew uninstall macblock dnsmasq
+```
+
+### If installed via PyPI
+
+```bash
+python3 -m pip uninstall macblock
 ```
 
 ## Homebrew permission errors
