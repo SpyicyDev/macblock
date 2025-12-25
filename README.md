@@ -23,13 +23,13 @@ Most of this project was vibe-coded with careful code review and analysis of wha
 ### Via Homebrew (recommended)
 
 ```bash
-brew install SpyicyDev/macblock/macblock
+brew install SpyicyDev/formulae/macblock
 ```
 
 Or, if you prefer adding the tap explicitly:
 
 ```bash
-brew tap SpyicyDev/macblock
+brew tap SpyicyDev/formulae
 brew install macblock
 ```
 
