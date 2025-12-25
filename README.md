@@ -128,6 +128,16 @@ brew uninstall macblock dnsmasq
 - Verify DNS state: `scutil --dns` (macblock uses this to preserve split DNS).
 - Port conflict on `:53`: `sudo lsof -i :53 -P -n`.
 
+## Attribution
+
+macblock can download third-party blocklists from:
+
+- StevenBlack hosts: https://github.com/StevenBlack/hosts
+- HaGeZi DNS blocklists: https://github.com/hagezi/dns-blocklists
+- OISD: https://oisd.nl/
+
+Please review each upstream project's license/terms. macblock does not vendor or redistribute these lists in this repository.
+
 ## Security
 
 See `SECURITY.md` for the threat model and privileged footprint.
