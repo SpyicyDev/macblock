@@ -144,7 +144,7 @@ Then:
 
 ```bash
 direnv allow
-just setup
+just sync
 just ci
 ```
 

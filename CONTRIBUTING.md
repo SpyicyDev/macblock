@@ -20,8 +20,8 @@ brew install direnv
 
 direnv allow
 
-# Install deps + pre-commit hooks
-just setup
+# Install deps
+just sync
 ```
 
 ## Common commands

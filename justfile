@@ -12,8 +12,6 @@ default:
 sync:
     uv sync --dev
 
-setup: sync
-    uv run pre-commit install
 
 # --- Run ---
 
@@ -87,10 +85,6 @@ release version:
     uv run pyright src/macblock
     uv run pytest
 
-    echo "Running pre-commit hooks"
-    uv run pre-commit run --files pyproject.toml CHANGELOG.md uv.lock || true
-    git add pyproject.toml CHANGELOG.md uv.lock
-    uv run pre-commit run --files pyproject.toml CHANGELOG.md uv.lock
 
     echo "Committing and tagging v{{version}}"
     git commit -m "chore(release): prepare v{{version}}"
