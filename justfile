@@ -87,6 +87,7 @@ release version:
 
 
     echo "Committing and tagging v{{version}}"
+    git add pyproject.toml CHANGELOG.md uv.lock
     git commit -m "chore(release): prepare v{{version}}"
     git tag "v{{version}}"
 
