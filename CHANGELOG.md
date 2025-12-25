@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.2.2](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.2) - 2025-12-25
+
+### Bug Fixes
+
+- fix: stage release artifacts before commit
+
+- fix: make GitHub issue forms and PR template discoverable
+
+
+### Documentation
+
+- docs: update Homebrew tap references
+
+- docs: add vibe-coding disclaimer
+
+
+### Miscellaneous
+
+- chore: improve repo readiness
+
+- ci: publish releases to PyPI
+
+- chore: prep PyPI metadata and docs
+
+- chore: remove pre-commit tooling
+
+- chore: remove legacy issue template markdown files
+
+- Potential fix for code scanning alert no. 1: Workflow does not contain permissions
+
 ## [0.2.1](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.1) - 2025-12-24
 
 ### Bug Fixes
@@ -110,3 +140,4 @@
 ### Refactoring
 
 - Refactor architecture: daemon runs from installed package
+
