@@ -6,6 +6,10 @@
 
 Local DNS sinkhole for macOS using `dnsmasq` on `127.0.0.1:53`, with automatic system DNS configuration and split-DNS preservation.
 
+## Why?
+
+I like Pi-Hole, but I don't necessarily want to deploy a whole box on a network for DNS adblock, or have the whole network go through it. I also wanted a better solution than running Pi-Hole in a container on MacOS, which felt like adding a whole lot of overhead for a relatively lightweight service. After some searching, I found I could configure `dnsmasq` myself and run a fairly simple sinkhole as a service. `macblock` is a CLI and long-running management service that make the installation, configuration, and management of a `dnsmasq`-based DNS sinkhole on MacOS easy.
+
 ## Vibe-coding disclaimer
 
 Most of this project was vibe-coded with careful code review and analysis of what the daemon touches. Every effort was made to ensure that the services here are using root as little as possible. If you find any holes I missed, please open an issue or a PR!
