@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import pytest
 
 import macblock.daemon as daemon
+from macblock.exec import RunResult
 from macblock.state import State, load_state
 
 
@@ -190,3 +191,101 @@ def test_apply_state_paused_restores_dns(tmp_path, monkeypatch: pytest.MonkeyPat
     assert issues == []
     assert ("Wi-Fi", ["9.9.9.9"]) in restore_calls
     assert ("Wi-Fi", ["corp"]) in restore_calls
+
+
+class _FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def time(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def _mk_state(*, enabled: bool, resume_at_epoch: int | None) -> State:
+    return State(
+        schema_version=2,
+        enabled=enabled,
+        resume_at_epoch=resume_at_epoch,
+        blocklist_source=None,
+        dns_backup={},
+        managed_services=[],
+        resolver_domains=[],
+    )
+
+
+def test_should_wait_for_network_before_apply(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(daemon.time, "time", lambda: 1000.0)
+
+    assert (
+        daemon._should_wait_for_network_before_apply(
+            _mk_state(enabled=False, resume_at_epoch=None)
+        )
+        is False
+    )
+    assert (
+        daemon._should_wait_for_network_before_apply(
+            _mk_state(enabled=True, resume_at_epoch=None)
+        )
+        is True
+    )
+    assert (
+        daemon._should_wait_for_network_before_apply(
+            _mk_state(enabled=True, resume_at_epoch=2000)
+        )
+        is False
+    )
+    assert (
+        daemon._should_wait_for_network_before_apply(
+            _mk_state(enabled=True, resume_at_epoch=900)
+        )
+        is True
+    )
+
+
+def test_wait_for_network_ready_waits_until_route_and_ip(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    clock = _FakeClock()
+    monkeypatch.setattr(daemon.time, "time", clock.time)
+    monkeypatch.setattr(daemon.time, "sleep", clock.sleep)
+    monkeypatch.setattr(daemon, "_shutdown_requested", False)
+    monkeypatch.setattr(daemon, "_trigger_apply", False)
+
+    def _run(cmd: list[str], *, timeout: float | None = 10.0) -> RunResult:
+        if cmd == ["/sbin/route", "-n", "get", "default"]:
+            if clock.now < 1.0:
+                return RunResult(returncode=1, stdout="", stderr="not in table")
+            return RunResult(returncode=0, stdout="interface: en0\n", stderr="")
+
+        if cmd == ["/usr/sbin/ipconfig", "getifaddr", "en0"]:
+            if clock.now < 1.0:
+                return RunResult(returncode=1, stdout="", stderr="")
+            return RunResult(returncode=0, stdout="192.168.0.10\n", stderr="")
+
+        raise AssertionError(f"unexpected cmd: {cmd}")
+
+    monkeypatch.setattr(daemon, "run", _run)
+
+    ok = daemon._wait_for_network_ready(15.0)
+    assert ok is True
+    assert clock.now >= 1.0
+
+
+def test_wait_for_network_ready_times_out(monkeypatch: pytest.MonkeyPatch):
+    clock = _FakeClock()
+    monkeypatch.setattr(daemon.time, "time", clock.time)
+    monkeypatch.setattr(daemon.time, "sleep", clock.sleep)
+    monkeypatch.setattr(daemon, "_shutdown_requested", False)
+    monkeypatch.setattr(daemon, "_trigger_apply", False)
+
+    def _run(cmd: list[str], *, timeout: float | None = 10.0) -> RunResult:
+        return RunResult(returncode=1, stdout="", stderr="")
+
+    monkeypatch.setattr(daemon, "run", _run)
+
+    ok = daemon._wait_for_network_ready(15.0)
+    assert ok is False
+    assert clock.now >= 15.0

@@ -5,6 +5,7 @@ Daemon entry point for launchd. Run with: macblock daemon
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -18,6 +19,7 @@ from macblock.constants import (
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )
+from macblock.exec import run
 from macblock.resolvers import read_system_resolvers
 from macblock.state import load_state, save_state_atomic, replace_state, State
 from macblock.system_dns import (
@@ -73,6 +75,106 @@ def _read_pid_file(path) -> int | None:
         return pid if pid > 1 else None
     except Exception:
         return None
+
+
+_IPV4_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+
+
+def _get_default_route_interface() -> str | None:
+    r = run(["/sbin/route", "-n", "get", "default"], timeout=2.0)
+    if r.returncode != 0:
+        return None
+
+    for raw in r.stdout.splitlines():
+        line = raw.strip()
+        if not line.startswith("interface:"):
+            continue
+        interface = line.split(":", 1)[1].strip()
+        return interface or None
+
+    return None
+
+
+def _get_interface_ipv4(interface: str) -> str | None:
+    if not interface:
+        return None
+
+    r = run(["/usr/sbin/ipconfig", "getifaddr", interface], timeout=2.0)
+    if r.returncode != 0:
+        return None
+
+    ip = (r.stdout or "").strip()
+    return ip if _IPV4_RE.match(ip) else None
+
+
+def _network_ready() -> tuple[bool, str, str | None, str | None]:
+    interface = _get_default_route_interface()
+    if not interface:
+        return False, "no default route", None, None
+
+    ip = _get_interface_ipv4(interface)
+    if not ip:
+        return False, f"no IPv4 for {interface}", interface, None
+
+    return True, "", interface, ip
+
+
+def _wait_for_network_ready(max_wait_s: float = 15.0) -> bool:
+    start = time.time()
+    stable_good: tuple[str, str] | None = None
+    stable_count = 0
+
+    logged_start = False
+    last_reason: str | None = None
+
+    while True:
+        now = time.time()
+        elapsed = now - start
+
+        if _shutdown_requested or _trigger_apply:
+            return False
+
+        if elapsed >= max_wait_s:
+            if logged_start:
+                print(
+                    f"network not ready after {max_wait_s:.0f}s; applying anyway",
+                    file=sys.stderr,
+                )
+            return False
+
+        ready, reason, interface, ip = _network_ready()
+        if ready and interface and ip:
+            current = (interface, ip)
+            if current == stable_good:
+                stable_count += 1
+            else:
+                stable_good = current
+                stable_count = 1
+
+            if stable_count >= 2:
+                if elapsed >= 0.25:
+                    print(
+                        f"network ready after {elapsed:.1f}s ({interface} {ip})",
+                        file=sys.stderr,
+                    )
+                return True
+
+        else:
+            stable_good = None
+            stable_count = 0
+
+            if not logged_start:
+                print(
+                    f"waiting for network ready (max {max_wait_s:.0f}s): {reason}",
+                    file=sys.stderr,
+                )
+                logged_start = True
+                last_reason = reason
+            elif reason != last_reason and elapsed >= 1.0:
+                print(f"waiting for network ready: {reason}", file=sys.stderr)
+                last_reason = reason
+
+        time.sleep(0.25)
 
 
 def _hup_dnsmasq() -> bool:
@@ -286,6 +388,15 @@ def _seconds_until_resume(state: State) -> float | None:
     return float(state.resume_at_epoch - now)
 
 
+def _should_wait_for_network_before_apply(state: State) -> bool:
+    if not state.enabled:
+        return False
+
+    now = int(time.time())
+    paused = state.resume_at_epoch is not None and state.resume_at_epoch > now
+    return not paused
+
+
 def _wait_for_network_change_or_signal(timeout: float | None) -> None:
     """Wait for network change notification or until signaled.
 
@@ -397,6 +508,10 @@ def run_daemon() -> int:
     try:
         while not _shutdown_requested:
             _trigger_apply = False
+
+            state_for_wait = load_state(SYSTEM_STATE_FILE)
+            if _should_wait_for_network_before_apply(state_for_wait):
+                _wait_for_network_ready(15.0)
 
             try:
                 success, issues = _apply_state()
