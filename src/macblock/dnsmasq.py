@@ -6,7 +6,6 @@ from macblock.constants import (
     DNSMASQ_USER,
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_DNSMASQ_CONF,
-    VAR_DB_DNSMASQ_DIR,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )

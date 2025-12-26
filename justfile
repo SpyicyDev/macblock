@@ -71,12 +71,6 @@ release version:
         exit 1
     fi
 
-    echo "Updating version in pyproject.toml -> {{version}}"
-    sed -i '' "s/^version = \".*\"/version = \"{{version}}\"/" pyproject.toml
-
-    echo "Generating CHANGELOG.md"
-    git cliff --config cliff.toml --tag "v{{version}}" --output CHANGELOG.md
-
     echo "Running checks"
     uv lock
     uv sync --dev --frozen
@@ -85,6 +79,11 @@ release version:
     uv run pyright src/macblock
     uv run pytest
 
+    echo "Updating version in pyproject.toml -> {{version}}"
+    sed -i '' "s/^version = \".*\"/version = \"{{version}}\"/" pyproject.toml
+
+    echo "Generating CHANGELOG.md"
+    git cliff --config cliff.toml --tag "v{{version}}" --output CHANGELOG.md
 
     echo "Committing and tagging v{{version}}"
     git add pyproject.toml CHANGELOG.md uv.lock
