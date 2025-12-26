@@ -24,7 +24,7 @@ def render_dnsmasq_conf() -> str:
         "bogus-priv",
         "cache-size=10000",
         f"user={DNSMASQ_USER}",
-        f"log-facility={VAR_DB_DNSMASQ_DIR / 'dnsmasq.log'}",
+        "log-facility=-",
         f"pid-file={VAR_DB_DNSMASQ_PID}",
         f"servers-file={VAR_DB_UPSTREAM_CONF}",
         f"conf-file={SYSTEM_BLOCKLIST_FILE}",

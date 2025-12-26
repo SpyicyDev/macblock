@@ -396,6 +396,14 @@ def do_install(force: bool = False, skip_update: bool = False) -> int:
         _chown_root(SYSTEM_LOG_DIR)
         _chown_root(VAR_DB_DIR)
         _chown_user(VAR_DB_DNSMASQ_DIR, DNSMASQ_USER)
+
+        legacy_dnsmasq_log = VAR_DB_DNSMASQ_DIR / "dnsmasq.log"
+        if legacy_dnsmasq_log.exists():
+            try:
+                legacy_dnsmasq_log.unlink()
+            except Exception:
+                pass
+
         spinner.succeed("Created directories")
 
     with Spinner("Writing configuration") as spinner:

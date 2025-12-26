@@ -13,6 +13,7 @@ from macblock.constants import (
     LAUNCHD_DNSMASQ_PLIST,
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_DNSMASQ_CONF,
+    SYSTEM_LOG_DIR,
     SYSTEM_RAW_BLOCKLIST_FILE,
     SYSTEM_STATE_FILE,
     SYSTEM_VERSION_FILE,
@@ -211,6 +212,18 @@ def run_diagnostics() -> int:
 
     # dnsmasq process
     subheader("dnsmasq Process")
+
+    dnsmasq_log_paths = [
+        ("stderr", SYSTEM_LOG_DIR / "dnsmasq.err.log"),
+        ("stdout", SYSTEM_LOG_DIR / "dnsmasq.out.log"),
+        ("facility", SYSTEM_LOG_DIR / "dnsmasq.log"),
+    ]
+    existing_logs = [name for name, path in dnsmasq_log_paths if path.exists()]
+    if existing_logs:
+        status_ok("Logs", ", ".join(existing_logs))
+    else:
+        status_warn("Logs", "none found")
+
     dnsmasq_pid = _read_pid_file(VAR_DB_DNSMASQ_PID)
 
     if dnsmasq_pid is None:

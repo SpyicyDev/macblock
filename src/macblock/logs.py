@@ -14,8 +14,12 @@ def _log_path(component: str, stderr: bool) -> Path:
     component = component.strip().lower()
 
     if component == "dnsmasq":
-        name = "dnsmasq.err.log" if stderr else "dnsmasq.out.log"
-        return SYSTEM_LOG_DIR / name
+        if stderr:
+            return SYSTEM_LOG_DIR / "dnsmasq.err.log"
+
+        stdout_path = SYSTEM_LOG_DIR / "dnsmasq.out.log"
+        facility_path = SYSTEM_LOG_DIR / "dnsmasq.log"
+        return stdout_path if stdout_path.exists() else facility_path
 
     if component == "daemon":
         name = "daemon.err.log" if stderr else "daemon.out.log"

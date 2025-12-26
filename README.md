@@ -157,10 +157,25 @@ brew uninstall macblock dnsmasq
 python3 -m pip uninstall macblock
 ```
 
+## Filesystem footprint
+
+macblock keeps its on-disk footprint intentionally small and predictable:
+
+- `/Library/Application Support/macblock/`: persistent state + configuration
+  - `state.json`, `version`, `blocklist.*`, `whitelist.txt`, `blacklist.txt`, `dns.exclude_services`, `etc/dnsmasq.conf`
+- `/Library/Logs/macblock/`: service logs (managed by launchd)
+  - `daemon.{out,err}.log`, `dnsmasq.{out,err}.log`
+- `/var/db/macblock/`: runtime state (safe to delete; will be recreated)
+  - `upstream.conf`, `daemon.pid`, `daemon.ready`, `dnsmasq/dnsmasq.pid`
+- `/Library/LaunchDaemons/`: launchd plists
+  - `com.local.macblock.daemon.plist`, `com.local.macblock.dnsmasq.plist`
+
+macblock also modifies system DNS settings via `networksetup`.
+
 ## Troubleshooting
 
 - Run `macblock doctor` first.
-- View logs: `macblock logs --component daemon` or `macblock logs --component dnsmasq --stderr`.
+- View logs: `macblock logs --component daemon --stderr` or `macblock logs --component dnsmasq --stderr`.
 - Verify DNS state: `scutil --dns` (macblock uses this to preserve split DNS).
 - Port conflict on `:53`: `sudo lsof -i :53 -P -n`.
 
