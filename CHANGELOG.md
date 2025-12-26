@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.3](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.3) - 2025-12-26
+
+### Bug Fixes
+
+- fix(daemon): wait for default route before applying DNS
+
+
+### Miscellaneous
+
+- Elaborated in README
+
 ## [0.2.2](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.2) - 2025-12-25
 
 ### Bug Fixes
