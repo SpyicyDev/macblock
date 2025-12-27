@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.7](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.7) - 2025-12-27
+
+### Bug Fixes
+
+- fix(daemon): wake on network_change notifications
+
 ## [0.2.6](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.6) - 2025-12-27
 
 ### Bug Fixes
