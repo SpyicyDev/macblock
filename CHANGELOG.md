@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.4](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.4) - 2025-12-27
+
+### Miscellaneous
+
+- Undid justfile change
+
+- chore(logging): unify dnsmasq logs under /Library/Logs
+
 ## [0.2.3](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.3) - 2025-12-26
 
 ### Bug Fixes
