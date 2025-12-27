@@ -187,7 +187,8 @@ COMMAND_HELP["logs"] = """{bold}USAGE{reset}
   {yellow}--component <name>{reset}   Component: 'daemon' or 'dnsmasq' (default: daemon)
   {yellow}--lines <n>{reset}         Number of lines to show (default: 200)
   {yellow}--follow{reset}            Continuously follow log output (like tail -f)
-  {yellow}--stderr{reset}            Show stderr instead of stdout
+  {yellow}--stream <name>{reset}     Stream: auto|stdout|stderr (default: auto)
+  {yellow}--stderr{reset}            Alias for: --stream stderr
 
 {bold}INHERITED FLAGS{reset}
   {yellow}-h, --help{reset}   Show help for command

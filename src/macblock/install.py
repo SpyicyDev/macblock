@@ -33,6 +33,7 @@ from macblock.constants import (
     SYSTEM_WHITELIST_FILE,
     SYSTEM_LOG_DIR,
     VAR_DB_DAEMON_PID,
+    VAR_DB_DAEMON_LAST_APPLY,
     VAR_DB_DNSMASQ_DIR,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_DIR,
@@ -614,6 +615,7 @@ def do_uninstall(force: bool = False) -> int:
             VAR_DB_DNSMASQ_DIR / "dnsmasq.log",
             VAR_DB_UPSTREAM_CONF,
             VAR_DB_DAEMON_PID,
+            VAR_DB_DAEMON_LAST_APPLY,
         ]:
             if p.exists():
                 p.unlink()

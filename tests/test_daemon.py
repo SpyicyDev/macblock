@@ -66,7 +66,8 @@ def test_update_upstreams_writes_defaults_and_per_domain(
         resolver_domains=[],
     )
 
-    daemon._update_upstreams(st)
+    changed = daemon._update_upstreams(st)
+    assert changed is True
 
     text = upstream_conf.read_text(encoding="utf-8")
     assert "server=1.1.1.1\n" in text
@@ -108,7 +109,7 @@ def test_apply_state_enables_blocking_and_persists_state(
 
     monkeypatch.setattr(daemon, "set_dns_servers", _set_dns)
 
-    monkeypatch.setattr(daemon, "_update_upstreams", lambda _state: None)
+    monkeypatch.setattr(daemon, "_update_upstreams", lambda _state: False)
     monkeypatch.setattr(daemon, "_hup_dnsmasq", lambda: True)
 
     daemon.save_state_atomic(
@@ -168,7 +169,7 @@ def test_apply_state_paused_restores_dns(tmp_path, monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(daemon, "set_dns_servers", _set_dns)
     monkeypatch.setattr(daemon, "set_search_domains", _set_search)
-    monkeypatch.setattr(daemon, "_update_upstreams", lambda _state: None)
+    monkeypatch.setattr(daemon, "_update_upstreams", lambda _state: False)
     monkeypatch.setattr(daemon, "_hup_dnsmasq", lambda: True)
 
     daemon.save_state_atomic(

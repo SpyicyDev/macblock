@@ -16,6 +16,7 @@ from macblock.constants import (
     SYSTEM_STATE_FILE,
     VAR_DB_DAEMON_PID,
     VAR_DB_DAEMON_READY,
+    VAR_DB_DAEMON_LAST_APPLY,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )
@@ -35,6 +36,16 @@ from macblock.system_dns import (
 
 _trigger_apply = False
 _shutdown_requested = False
+
+
+def _log(message: str) -> None:
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{ts}] {message}", file=sys.stderr, flush=True)
+
+
+def _write_last_apply_file() -> None:
+    VAR_DB_DAEMON_LAST_APPLY.parent.mkdir(parents=True, exist_ok=True)
+    VAR_DB_DAEMON_LAST_APPLY.write_text(f"{int(time.time())}\n", encoding="utf-8")
 
 
 def _handle_sigusr1(signum: int, frame: object) -> None:
@@ -246,7 +257,7 @@ def _collect_upstream_defaults(state: State, exclude: set[str]) -> list[str]:
     return defaults
 
 
-def _update_upstreams(state: State) -> None:
+def _update_upstreams(state: State) -> bool:
     exclude = _load_exclude_services()
     defaults = _collect_upstream_defaults(state, exclude)
     resolvers = read_system_resolvers()
@@ -262,17 +273,33 @@ def _update_upstreams(state: State) -> None:
 
     conf_text = "\n".join(lines) + "\n"
 
+    try:
+        if VAR_DB_UPSTREAM_CONF.exists():
+            existing = VAR_DB_UPSTREAM_CONF.read_text(
+                encoding="utf-8", errors="replace"
+            )
+            if existing == conf_text:
+                return False
+    except Exception:
+        pass
+
     VAR_DB_UPSTREAM_CONF.parent.mkdir(parents=True, exist_ok=True)
     tmp = VAR_DB_UPSTREAM_CONF.with_suffix(".tmp")
     tmp.write_text(conf_text, encoding="utf-8")
     tmp.replace(VAR_DB_UPSTREAM_CONF)
+    return True
 
 
-def _backup_service_dns(service: str, device: str | None, dns_backup: dict) -> None:
+def _backup_service_dns(
+    service: str,
+    device: str | None,
+    dns_backup: dict,
+    *,
+    current_dns: list[str] | None,
+) -> None:
     if service in dns_backup:
         return
 
-    current_dns = get_dns_servers(service)
     if current_dns == ["127.0.0.1"]:
         return
 
@@ -291,9 +318,19 @@ def _enable_blocking(state: State, managed_infos: list) -> tuple[State, list[str
 
     for info in managed_infos:
         managed_names.append(info.name)
-        _backup_service_dns(info.name, info.device, dns_backup)
-        if not set_dns_servers(info.name, ["127.0.0.1"]):
+
+        current_dns = get_dns_servers(info.name)
+        _backup_service_dns(info.name, info.device, dns_backup, current_dns=current_dns)
+
+        if current_dns == ["127.0.0.1"]:
+            _log(f"apply: {info.name}: DNS already 127.0.0.1")
+            continue
+
+        if set_dns_servers(info.name, ["127.0.0.1"]):
+            _log(f"apply: {info.name}: set DNS -> 127.0.0.1")
+        else:
             failures.append(f"failed to set DNS for {info.name}")
+            _log(f"apply: {info.name}: failed to set DNS -> 127.0.0.1")
 
     new_state = replace_state(
         state,
@@ -310,17 +347,36 @@ def _disable_blocking(state: State, managed_names: list[str]) -> list[str]:
     for service in to_restore:
         backup_data = state.dns_backup.get(service)
         if not isinstance(backup_data, dict):
+            _log(f"apply: {service}: no DNS backup found; skipping restore")
             continue
 
         dns = backup_data.get("dns")
         search = backup_data.get("search")
 
-        if not set_dns_servers(service, list(dns) if isinstance(dns, list) else None):
-            failures.append(f"failed to restore DNS for {service}")
-        if not set_search_domains(
-            service, list(search) if isinstance(search, list) else None
-        ):
-            failures.append(f"failed to restore search domains for {service}")
+        desired_dns = list(dns) if isinstance(dns, list) else None
+        desired_search = list(search) if isinstance(search, list) else None
+
+        current_dns = get_dns_servers(service)
+        if current_dns == desired_dns:
+            _log(f"apply: {service}: DNS already restored")
+        else:
+            if set_dns_servers(service, desired_dns):
+                _log(f"apply: {service}: restored DNS -> {desired_dns}")
+            else:
+                failures.append(f"failed to restore DNS for {service}")
+                _log(f"apply: {service}: failed to restore DNS -> {desired_dns}")
+
+        current_search = get_search_domains(service)
+        if current_search == desired_search:
+            _log(f"apply: {service}: search domains already restored")
+        else:
+            if set_search_domains(service, desired_search):
+                _log(f"apply: {service}: restored search domains -> {desired_search}")
+            else:
+                failures.append(f"failed to restore search domains for {service}")
+                _log(
+                    f"apply: {service}: failed to restore search domains -> {desired_search}"
+                )
 
     return failures
 
@@ -340,7 +396,9 @@ def _verify_dns_state(
     return issues
 
 
-def _apply_state() -> tuple[bool, list[str]]:
+def _apply_state(*, reason: str = "unknown") -> tuple[bool, list[str]]:
+    started = time.time()
+
     state = load_state(SYSTEM_STATE_FILE)
     issues: list[str] = []
 
@@ -354,24 +412,53 @@ def _apply_state() -> tuple[bool, list[str]]:
     managed_infos = compute_managed_services(exclude=exclude)
     managed_names = [info.name for info in managed_infos]
 
+    _log(
+        f"apply start (reason={reason}) enabled={state.enabled} paused={paused} managed={len(managed_names)}"
+    )
+    if managed_names:
+        _log("apply: managed services: " + ", ".join(managed_names))
+    else:
+        _log("apply: no managed services detected")
+
     if state.enabled and not paused:
+        _log("apply: enforcing localhost DNS (127.0.0.1)")
         state, failures = _enable_blocking(state, managed_infos)
         issues.extend(failures)
         should_be_localhost = True
     else:
+        _log("apply: restoring DNS from backup")
         failures = _disable_blocking(state, managed_names)
         issues.extend(failures)
         should_be_localhost = False
 
     save_state_atomic(SYSTEM_STATE_FILE, state)
-    _update_upstreams(state)
-    _hup_dnsmasq()
+
+    upstreams_changed = _update_upstreams(state)
+    if upstreams_changed:
+        _log("apply: upstreams updated; reloading dnsmasq")
+        if _hup_dnsmasq():
+            _log("apply: dnsmasq reload signal sent")
+        else:
+            _log("apply: failed to reload dnsmasq")
+    else:
+        _log("apply: upstreams unchanged; skipping dnsmasq reload")
 
     time.sleep(0.1)
     verification_issues = _verify_dns_state(state, managed_infos, should_be_localhost)
     issues.extend(verification_issues)
 
-    return len(issues) == 0, issues
+    if verification_issues:
+        for issue in verification_issues:
+            _log(f"apply: verify issue: {issue}")
+
+    elapsed = time.time() - started
+    ok = len(issues) == 0
+    if ok:
+        _log(f"apply done: success ({elapsed:.2f}s)")
+    else:
+        _log(f"apply done: {len(issues)} issue(s) ({elapsed:.2f}s)")
+
+    return ok, issues
 
 
 def _seconds_until_resume(state: State) -> float | None:
@@ -397,7 +484,9 @@ def _should_wait_for_network_before_apply(state: State) -> bool:
     return not paused
 
 
-def _wait_for_network_change_or_signal(timeout: float | None) -> None:
+def _wait_for_network_change_or_signal(
+    timeout: float | None,
+) -> tuple[str, int | None]:
     """Wait for network change notification or until signaled.
 
     Uses Popen with a poll loop so we can check for signals.
@@ -411,32 +500,37 @@ def _wait_for_network_change_or_signal(timeout: float | None) -> None:
             cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
     except Exception:
-        # If we can't start notifyutil, just sleep briefly
         time.sleep(1.0)
-        return
+        return "sleep", None
+
+    reason: str = "timeout"
+    exit_code: int | None = None
 
     try:
-        deadline = time.time() + timeout if timeout else None
-        poll_interval = 0.25  # Check for signals every 250ms
+        deadline = time.time() + timeout if timeout is not None else None
+        poll_interval = 0.25
 
         while True:
-            # Check if we should exit the wait
-            if _trigger_apply or _shutdown_requested:
+            if _shutdown_requested:
+                reason = "shutdown"
                 break
 
-            # Check if timeout expired
-            if deadline and time.time() >= deadline:
+            if _trigger_apply:
+                reason = "signal"
                 break
 
-            # Check if process finished (network change occurred)
+            if deadline is not None and time.time() >= deadline:
+                reason = "timeout"
+                break
+
             ret = proc.poll()
             if ret is not None:
+                reason = "notify"
+                exit_code = ret
                 break
 
-            # Sleep briefly before next poll
             time.sleep(poll_interval)
     finally:
-        # Clean up the subprocess
         if proc.poll() is None:
             proc.terminate()
             try:
@@ -444,6 +538,8 @@ def _wait_for_network_change_or_signal(timeout: float | None) -> None:
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
+
+    return reason, exit_code
 
 
 def _write_pid_file() -> None:
@@ -500,10 +596,12 @@ def run_daemon() -> int:
 
     _write_pid_file()
 
-    print(f"macblock daemon started (pid={os.getpid()})", file=sys.stderr)
+    _log(f"macblock daemon started (pid={os.getpid()})")
 
     consecutive_failures = 0
     max_consecutive_failures = 5
+
+    wake_reason = "startup"
 
     try:
         while not _shutdown_requested:
@@ -514,32 +612,31 @@ def run_daemon() -> int:
                 _wait_for_network_ready(15.0)
 
             try:
-                success, issues = _apply_state()
+                success, issues = _apply_state(reason=wake_reason)
                 if success:
                     consecutive_failures = 0
+                    _write_last_apply_file()
+
                     if not VAR_DB_DAEMON_READY.exists():
                         _write_ready_file()
-                        print("daemon ready", file=sys.stderr)
+                        _log("daemon ready")
                 else:
                     consecutive_failures += 1
-                    for issue in issues:
-                        print(f"state apply issue: {issue}", file=sys.stderr)
+                    _log(f"apply returned {len(issues)} issue(s)")
 
                     if consecutive_failures >= max_consecutive_failures:
-                        print(
-                            f"too many consecutive failures ({consecutive_failures}), continuing anyway",
-                            file=sys.stderr,
+                        _log(
+                            f"too many consecutive failures ({consecutive_failures}), continuing anyway"
                         )
                         consecutive_failures = 0
 
             except Exception as e:
                 consecutive_failures += 1
-                print(f"error applying state: {e}", file=sys.stderr)
+                _log(f"error applying state: {e}")
 
                 if consecutive_failures >= max_consecutive_failures:
-                    print(
-                        f"too many consecutive failures ({consecutive_failures}), continuing anyway",
-                        file=sys.stderr,
+                    _log(
+                        f"too many consecutive failures ({consecutive_failures}), continuing anyway"
                     )
                     consecutive_failures = 0
 
@@ -549,15 +646,36 @@ def run_daemon() -> int:
             state = load_state(SYSTEM_STATE_FILE)
             timeout = _seconds_until_resume(state)
 
-            if timeout is not None and timeout > 60:
+            if timeout is None:
+                timeout = 300.0
+            elif timeout > 60:
                 timeout = 60.0
 
-            _wait_for_network_change_or_signal(timeout)
+            _log(f"waiting for network changes (timeout={timeout:.0f}s)")
+            wait_reason, exit_code = _wait_for_network_change_or_signal(timeout)
+
+            if wait_reason == "shutdown":
+                wake_reason = "shutdown"
+            elif wait_reason == "signal":
+                _log("wake: received SIGUSR1 trigger")
+                wake_reason = "signal"
+            elif wait_reason == "notify":
+                _log(f"wake: network change notification (exit_code={exit_code})")
+                wake_reason = "notify"
+            elif wait_reason == "timeout":
+                _log("wake: periodic reconcile")
+                wake_reason = "timeout"
+            else:
+                _log(f"wake: notify watcher fallback ({wait_reason})")
+                wake_reason = wait_reason
+
+            if wake_reason == "shutdown":
+                break
 
     except KeyboardInterrupt:
-        print("daemon interrupted", file=sys.stderr)
+        _log("daemon interrupted")
     finally:
-        print("daemon shutting down", file=sys.stderr)
+        _log("daemon shutting down")
         _remove_ready_file()
         _remove_pid_file()
 

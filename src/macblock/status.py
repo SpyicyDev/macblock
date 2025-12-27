@@ -10,6 +10,7 @@ from macblock.constants import (
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_STATE_FILE,
     VAR_DB_DAEMON_PID,
+    VAR_DB_DAEMON_LAST_APPLY,
     VAR_DB_DNSMASQ_PID,
 )
 from macblock.exec import run
@@ -103,6 +104,18 @@ def show_status() -> int:
         status_ok("daemon", f"running (PID {daemon_pid})")
     else:
         status_err("daemon", "not running")
+
+    if VAR_DB_DAEMON_LAST_APPLY.exists():
+        try:
+            last_apply = int(
+                VAR_DB_DAEMON_LAST_APPLY.read_text(encoding="utf-8").strip()
+            )
+            age_s = max(0, int(time.time()) - last_apply)
+            status_info("Last apply", f"{age_s}s ago")
+        except Exception:
+            status_warn("Last apply", "unknown")
+    else:
+        status_warn("Last apply", "unknown")
 
     # Blocklist
     subheader("Blocklist")

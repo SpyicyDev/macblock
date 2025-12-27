@@ -28,6 +28,7 @@ VAR_DB_DIR = Path("/var/db") / APP_NAME
 VAR_DB_UPSTREAM_CONF = VAR_DB_DIR / "upstream.conf"
 VAR_DB_DAEMON_PID = VAR_DB_DIR / "daemon.pid"
 VAR_DB_DAEMON_READY = VAR_DB_DIR / "daemon.ready"
+VAR_DB_DAEMON_LAST_APPLY = VAR_DB_DIR / "daemon.last_apply"
 
 VAR_DB_DNSMASQ_DIR = VAR_DB_DIR / "dnsmasq"
 VAR_DB_DNSMASQ_PID = VAR_DB_DNSMASQ_DIR / "dnsmasq.pid"

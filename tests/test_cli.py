@@ -49,3 +49,26 @@ def test_parser_sources_set():
     assert cmd == "sources"
     assert args["sources_cmd"] == "set"
     assert args["source"] == "hagezi-pro"
+
+
+def test_parser_logs_defaults_to_auto_stream():
+    cmd, args = _parse_args(["logs"])
+    assert cmd == "logs"
+    assert args["component"] == "daemon"
+    assert args["lines"] == 200
+    assert args["follow"] is False
+    assert args["stream"] == "auto"
+    assert args["stderr"] is False
+
+
+def test_parser_logs_stderr_sets_stream():
+    cmd, args = _parse_args(["logs", "--stderr"])
+    assert cmd == "logs"
+    assert args["stream"] == "stderr"
+    assert args["stderr"] is True
+
+
+def test_parser_logs_stream_overrides_alias():
+    cmd, args = _parse_args(["logs", "--stderr", "--stream", "stdout"])
+    assert cmd == "logs"
+    assert args["stream"] == "stdout"

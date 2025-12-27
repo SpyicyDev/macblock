@@ -19,6 +19,7 @@ from macblock.constants import (
     SYSTEM_VERSION_FILE,
     VAR_DB_DAEMON_PID,
     VAR_DB_DAEMON_READY,
+    VAR_DB_DAEMON_LAST_APPLY,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )
@@ -276,6 +277,18 @@ def run_diagnostics() -> int:
         status_warn("Ready", "no (not yet signaled)")
         if daemon_pid and _is_process_running(daemon_pid):
             issues.append("daemon running but not ready")
+
+    if VAR_DB_DAEMON_LAST_APPLY.exists():
+        try:
+            last_apply = int(
+                VAR_DB_DAEMON_LAST_APPLY.read_text(encoding="utf-8").strip()
+            )
+            age_s = max(0, int(time.time()) - last_apply)
+            status_info("Last apply", f"{age_s}s ago")
+        except Exception:
+            status_warn("Last apply", "unknown")
+    else:
+        status_warn("Last apply", "unknown")
 
     # DNS state
     subheader("DNS State")

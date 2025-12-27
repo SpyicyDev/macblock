@@ -146,6 +146,7 @@ def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
         args["lines"] = 200
         args["follow"] = False
         args["stderr"] = False
+        args["stream"] = "auto"
         i = 0
         while i < len(rest):
             if rest[i] == "--component" and i + 1 < len(rest):
@@ -159,7 +160,11 @@ def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
                 i += 1
             elif rest[i] == "--stderr":
                 args["stderr"] = True
+                args["stream"] = "stderr"
                 i += 1
+            elif rest[i] == "--stream" and i + 1 < len(rest):
+                args["stream"] = rest[i + 1]
+                i += 2
             else:
                 i += 1
 
@@ -267,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
                 lines=int(args.get("lines", 200)),
                 follow=bool(args.get("follow", False)),
                 stderr=bool(args.get("stderr", False)),
+                stream=str(args.get("stream", "auto")),
             )
         if cmd == "install":
             return do_install(
