@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.5](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.5) - 2025-12-27
+
+### Bug Fixes
+
+- fix(system_dns): resolve service device mapping
+
 ## [0.2.4](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.4) - 2025-12-27
 
 ### Miscellaneous
