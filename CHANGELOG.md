@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.6](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.6) - 2025-12-27
+
+### Bug Fixes
+
+- fix(daemon): improve logging and reconciliation
+
 ## [0.2.5](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.5) - 2025-12-27
 
 ### Bug Fixes
