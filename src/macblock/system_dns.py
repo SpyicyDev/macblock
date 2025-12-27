@@ -36,11 +36,45 @@ def _parse_networksetup_listallnetworkservices(text: str) -> list[str]:
     return services
 
 
+def _parse_networksetup_listnetworkserviceorder(text: str) -> dict[str, str | None]:
+    mapping: dict[str, str | None] = {}
+    current_service: str | None = None
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+
+        m = re.match(r"^\(\d+\)\s+(.*)$", line)
+        if m:
+            current_service = m.group(1).strip()
+            if current_service and current_service not in mapping:
+                mapping[current_service] = None
+            continue
+
+        if current_service is None:
+            continue
+
+        m = re.search(r"Device:\s*([^\)]*)\)", line)
+        if m:
+            device = m.group(1).strip()
+            mapping[current_service] = device or None
+
+    return mapping
+
+
 def list_enabled_network_services() -> list[str]:
     r = run(["/usr/sbin/networksetup", "-listallnetworkservices"])
     if r.returncode != 0:
         return []
     return _parse_networksetup_listallnetworkservices(r.stdout)
+
+
+def list_network_service_devices() -> dict[str, str | None]:
+    r = run(["/usr/sbin/networksetup", "-listnetworkserviceorder"])
+    if r.returncode != 0:
+        return {}
+    return _parse_networksetup_listnetworkserviceorder(r.stdout)
 
 
 def _parse_getinfo_device(text: str) -> str | None:
@@ -54,8 +88,10 @@ def _parse_getinfo_device(text: str) -> str | None:
 
 
 def get_service_info(service: str) -> ServiceInfo:
-    r = run(["/usr/sbin/networksetup", "-getinfo", service])
-    device = _parse_getinfo_device(r.stdout if r.returncode == 0 else "")
+    device = list_network_service_devices().get(service)
+    if device is None:
+        r = run(["/usr/sbin/networksetup", "-getinfo", service])
+        device = _parse_getinfo_device(r.stdout if r.returncode == 0 else "")
     return ServiceInfo(name=service, device=device)
 
 
@@ -128,24 +164,31 @@ def compute_managed_services(*, exclude: set[str] | None = None) -> list[Service
     exclude = exclude or set()
 
     managed: list[ServiceInfo] = []
+    device_map = list_network_service_devices()
 
     for service in list_enabled_network_services():
         if service in exclude:
             continue
 
-        info = get_service_info(service)
-        device = info.device or ""
         service_l = service.lower()
-
-        if device.startswith(("utun", "ppp", "tun", "tap")):
-            continue
         if any(
             x in service_l
             for x in ("vpn", "tailscale", "wireguard", "openvpn", "anyconnect")
         ):
             continue
 
-        if device.startswith("en") or device.startswith("bridge"):
+        device = device_map.get(service)
+        if device is None:
+            r = run(["/usr/sbin/networksetup", "-getinfo", service])
+            device = _parse_getinfo_device(r.stdout if r.returncode == 0 else "")
+
+        info = ServiceInfo(name=service, device=device)
+        device_s = device or ""
+
+        if device_s.startswith(("utun", "ppp", "tun", "tap")):
+            continue
+
+        if device_s.startswith("en") or device_s.startswith("bridge"):
             managed.append(info)
             continue
 
