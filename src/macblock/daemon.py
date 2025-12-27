@@ -493,7 +493,7 @@ def _wait_for_network_change_or_signal(
     """
     global _trigger_apply, _shutdown_requested
 
-    cmd = ["/usr/bin/notifyutil", "-w", "com.apple.system.config.network_change"]
+    cmd = ["/usr/bin/notifyutil", "-1", "com.apple.system.config.network_change"]
 
     try:
         proc = subprocess.Popen(
