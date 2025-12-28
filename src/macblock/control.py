@@ -292,12 +292,12 @@ def _atomic_write(path, text: str) -> None:
         pass
 
 
-def do_upstreams_fallbacks_list() -> int:
+def do_upstreams_list() -> int:
     _check_installed()
     print()
 
-    header("🌐", "macblock upstream fallbacks")
-    status_info("Config file", str(SYSTEM_UPSTREAM_FALLBACKS_FILE))
+    header("🌐", "macblock upstream DNS")
+    status_info("Fallback file", str(SYSTEM_UPSTREAM_FALLBACKS_FILE))
 
     fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
     if not fallbacks:
@@ -313,11 +313,11 @@ def do_upstreams_fallbacks_list() -> int:
     return 0
 
 
-def do_upstreams_fallbacks_set(ips: list[str]) -> int:
+def do_upstreams_set(ips: list[str]) -> int:
     _check_installed()
     print()
 
-    header("🌐", "set upstream fallback DNS")
+    header("🌐", "set upstream DNS fallbacks")
     status_info("Config file", str(SYSTEM_UPSTREAM_FALLBACKS_FILE))
 
     current = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
@@ -368,11 +368,11 @@ def do_upstreams_fallbacks_set(ips: list[str]) -> int:
     return 0
 
 
-def do_upstreams_fallbacks_reset() -> int:
+def do_upstreams_reset() -> int:
     _check_installed()
     print()
 
-    header("🌐", "reset upstream fallback DNS")
+    header("🌐", "reset upstream DNS fallbacks")
     status_info("Config file", str(SYSTEM_UPSTREAM_FALLBACKS_FILE))
 
     with Spinner("Removing fallback config") as spinner:

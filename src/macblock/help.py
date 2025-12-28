@@ -189,7 +189,6 @@ COMMAND_HELP["logs"] = """{bold}USAGE{reset}
   {yellow}--lines <n>{reset}         Number of lines to show (default: 200)
   {yellow}--follow{reset}            Continuously follow log output (like tail -f)
   {yellow}--stream <name>{reset}     Stream: auto|stdout|stderr (default: auto)
-  {yellow}--stderr{reset}            Alias for: --stream stderr
 
 {bold}INHERITED FLAGS{reset}
   {yellow}-h, --help{reset}   Show help for command
@@ -438,26 +437,7 @@ COMMAND_HELP["upstreams"] = """{bold}USAGE{reset}
   macblock upstreams <subcommand> [args]
 
 {bold}DESCRIPTION{reset}
-  Manage upstream DNS configuration used by dnsmasq.
-
-{bold}SUBCOMMANDS{reset}
-  {green}fallbacks{reset}      Manage fallback upstream DNS servers
-
-{bold}INHERITED FLAGS{reset}
-  {yellow}-h, --help{reset}   Show help for command
-
-{bold}EXAMPLES{reset}
-  $ macblock upstreams fallbacks list
-  $ sudo macblock upstreams fallbacks set
-  $ sudo macblock upstreams fallbacks reset
-"""
-
-COMMAND_HELP["upstreams fallbacks"] = """{bold}USAGE{reset}
-  macblock upstreams fallbacks <subcommand> [args]
-
-{bold}DESCRIPTION{reset}
-  Configure the last-resort upstream DNS servers used when no system/DHCP
-  resolvers can be discovered.
+  Manage last-resort upstream DNS servers used when DHCP provides no resolvers.
 
 {bold}SUBCOMMANDS{reset}
   {green}list{reset}           Show configured fallbacks (if any)
@@ -466,17 +446,23 @@ COMMAND_HELP["upstreams fallbacks"] = """{bold}USAGE{reset}
 
 {bold}INHERITED FLAGS{reset}
   {yellow}-h, --help{reset}   Show help for command
+
+{bold}EXAMPLES{reset}
+  $ macblock upstreams list
+  $ sudo macblock upstreams set
+  $ sudo macblock upstreams set 9.9.9.9 149.112.112.112
+  $ sudo macblock upstreams reset
 """
 
-COMMAND_HELP["upstreams fallbacks list"] = """{bold}USAGE{reset}
-  macblock upstreams fallbacks list
+COMMAND_HELP["upstreams list"] = """{bold}USAGE{reset}
+  macblock upstreams list
 
 {bold}DESCRIPTION{reset}
   Show the configured fallback upstream DNS servers.
 """
 
-COMMAND_HELP["upstreams fallbacks set"] = """{bold}USAGE{reset}
-  macblock upstreams fallbacks set [ip...]
+COMMAND_HELP["upstreams set"] = """{bold}USAGE{reset}
+  macblock upstreams set [ip...]
 
 {bold}DESCRIPTION{reset}
   Set fallback upstream DNS servers.
@@ -484,12 +470,12 @@ COMMAND_HELP["upstreams fallbacks set"] = """{bold}USAGE{reset}
   Requires sudo privileges.
 
 {bold}EXAMPLES{reset}
-  $ sudo macblock upstreams fallbacks set
-  $ sudo macblock upstreams fallbacks set 9.9.9.9 149.112.112.112
+  $ sudo macblock upstreams set
+  $ sudo macblock upstreams set 9.9.9.9 149.112.112.112
 """
 
-COMMAND_HELP["upstreams fallbacks reset"] = """{bold}USAGE{reset}
-  macblock upstreams fallbacks reset
+COMMAND_HELP["upstreams reset"] = """{bold}USAGE{reset}
+  macblock upstreams reset
 
 {bold}DESCRIPTION{reset}
   Remove the fallback config file so macblock uses built-in defaults.

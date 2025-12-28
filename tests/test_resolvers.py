@@ -54,3 +54,57 @@ def test_collect_upstream_defaults_uses_configured_fallbacks(
     )
 
     assert daemon._collect_upstream_defaults(st, exclude=set()) == ["9.9.9.9"]
+
+
+def test_collect_upstream_defaults_does_not_use_fallbacks_if_scutil_has_defaults(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    fallbacks_file = tmp_path / "fallbacks"
+    fallbacks_file.write_text("9.9.9.9\n", encoding="utf-8")
+    monkeypatch.setattr(daemon, "SYSTEM_UPSTREAM_FALLBACKS_FILE", fallbacks_file)
+
+    class _Resolvers:
+        defaults: list[str] = ["8.8.8.8"]
+        per_domain: dict[str, list[str]] = {}
+
+    monkeypatch.setattr(daemon, "read_system_resolvers", lambda: _Resolvers())
+    monkeypatch.setattr(daemon, "compute_managed_services", lambda exclude=None: [])
+
+    st = State(
+        schema_version=2,
+        enabled=False,
+        resume_at_epoch=None,
+        blocklist_source=None,
+        dns_backup={},
+        managed_services=[],
+        resolver_domains=[],
+    )
+
+    assert daemon._collect_upstream_defaults(st, exclude=set()) == ["8.8.8.8"]
+
+
+def test_collect_upstream_defaults_ignores_state_dns_backup_for_upstreams(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    fallbacks_file = tmp_path / "fallbacks"
+    fallbacks_file.write_text("9.9.9.9\n", encoding="utf-8")
+    monkeypatch.setattr(daemon, "SYSTEM_UPSTREAM_FALLBACKS_FILE", fallbacks_file)
+
+    class _Resolvers:
+        defaults: list[str] = []
+        per_domain: dict[str, list[str]] = {}
+
+    monkeypatch.setattr(daemon, "read_system_resolvers", lambda: _Resolvers())
+    monkeypatch.setattr(daemon, "compute_managed_services", lambda exclude=None: [])
+
+    st = State(
+        schema_version=2,
+        enabled=False,
+        resume_at_epoch=None,
+        blocklist_source=None,
+        dns_backup={"Wi-Fi": {"dns": ["4.4.4.4"], "search": None, "dhcp": None}},
+        managed_services=[],
+        resolver_domains=[],
+    )
+
+    assert daemon._collect_upstream_defaults(st, exclude=set()) == ["9.9.9.9"]

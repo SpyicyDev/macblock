@@ -18,9 +18,9 @@ from macblock.control import (
     do_enable,
     do_pause,
     do_resume,
-    do_upstreams_fallbacks_list,
-    do_upstreams_fallbacks_reset,
-    do_upstreams_fallbacks_set,
+    do_upstreams_list,
+    do_upstreams_reset,
+    do_upstreams_set,
 )
 from macblock.doctor import run_diagnostics
 from macblock.dns_test import test_domain
@@ -65,11 +65,6 @@ def _get_help_context(args: list[str]) -> str | None:
             return f"{cmd} {subcmd}"
 
     if cmd == "upstreams" and len(clean) >= 2:
-        if clean[1] == "fallbacks":
-            if len(clean) >= 3 and clean[2] not in ("-h", "--help"):
-                return f"upstreams fallbacks {clean[2]}"
-            return "upstreams fallbacks"
-
         subcmd = clean[1]
         if subcmd not in ("-h", "--help"):
             return f"upstreams {subcmd}"
@@ -99,9 +94,7 @@ def _needs_root(cmd: str, args: dict) -> bool:
         return args.get("deny_cmd") in ("add", "remove")
 
     if cmd == "upstreams":
-        if args.get("upstreams_cmd") == "fallbacks":
-            return args.get("fallbacks_cmd") in ("set", "reset")
-        return False
+        return args.get("upstreams_cmd") in ("set", "reset")
 
     return False
 
@@ -154,10 +147,8 @@ def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
             # "help sources set" -> "sources set"
             if len(rest) >= 2 and rest[0] in ("sources", "allow", "deny"):
                 args["_help_context"] = f"{rest[0]} {rest[1]}"
-            elif len(rest) >= 3 and rest[0] == "upstreams" and rest[1] == "fallbacks":
-                args["_help_context"] = f"upstreams fallbacks {rest[2]}"
-            elif len(rest) >= 2 and rest[0] == "upstreams" and rest[1] == "fallbacks":
-                args["_help_context"] = "upstreams fallbacks"
+            elif len(rest) >= 2 and rest[0] == "upstreams":
+                args["_help_context"] = f"upstreams {rest[1]}"
             else:
                 args["_help_context"] = rest[0]
         else:
@@ -173,7 +164,6 @@ def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
         args["component"] = "daemon"
         args["lines"] = 200
         args["follow"] = False
-        args["stderr"] = False
         args["stream"] = "auto"
         i = 0
         while i < len(rest):
@@ -185,10 +175,6 @@ def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
                 i += 2
             elif rest[i] == "--follow":
                 args["follow"] = True
-                i += 1
-            elif rest[i] == "--stderr":
-                args["stderr"] = True
-                args["stream"] = "stderr"
                 i += 1
             elif rest[i] == "--stream" and i + 1 < len(rest):
                 args["stream"] = rest[i + 1]
@@ -258,25 +244,13 @@ def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
 
     elif cmd == "upstreams":
         if not rest:
-            raise MacblockError("upstreams requires a subcommand")
+            raise MacblockError("upstreams requires a subcommand: list, set, or reset")
 
         args["upstreams_cmd"] = rest[0]
+        if args["upstreams_cmd"] not in ("list", "set", "reset"):
+            raise MacblockError("upstreams requires a subcommand: list, set, or reset")
 
-        if args["upstreams_cmd"] != "fallbacks":
-            raise MacblockError("upstreams supports: fallbacks")
-
-        if len(rest) < 2:
-            raise MacblockError(
-                "upstreams fallbacks requires a subcommand: list, set, or reset"
-            )
-
-        args["fallbacks_cmd"] = rest[1]
-        if args["fallbacks_cmd"] not in ("list", "set", "reset"):
-            raise MacblockError(
-                "upstreams fallbacks requires a subcommand: list, set, or reset"
-            )
-
-        args["ips"] = rest[2:]
+        args["ips"] = rest[1:]
 
     return cmd, args
 
@@ -321,7 +295,6 @@ def main(argv: list[str] | None = None) -> int:
                 component=str(args.get("component", "daemon")),
                 lines=int(args.get("lines", 200)),
                 follow=bool(args.get("follow", False)),
-                stderr=bool(args.get("stderr", False)),
                 stream=str(args.get("stream", "auto")),
             )
         if cmd == "install":
@@ -362,14 +335,13 @@ def main(argv: list[str] | None = None) -> int:
             return list_blacklist()
 
         if cmd == "upstreams":
-            if args.get("upstreams_cmd") == "fallbacks":
-                subcmd = args.get("fallbacks_cmd")
-                if subcmd == "list":
-                    return do_upstreams_fallbacks_list()
-                if subcmd == "set":
-                    return do_upstreams_fallbacks_set(list(args.get("ips") or []))
-                if subcmd == "reset":
-                    return do_upstreams_fallbacks_reset()
+            subcmd = args.get("upstreams_cmd")
+            if subcmd == "list":
+                return do_upstreams_list()
+            if subcmd == "set":
+                return do_upstreams_set(list(args.get("ips") or []))
+            if subcmd == "reset":
+                return do_upstreams_reset()
 
             raise MacblockError("unknown upstreams subcommand")
 

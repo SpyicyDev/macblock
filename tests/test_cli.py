@@ -58,39 +58,29 @@ def test_parser_logs_defaults_to_auto_stream():
     assert args["lines"] == 200
     assert args["follow"] is False
     assert args["stream"] == "auto"
-    assert args["stderr"] is False
 
 
-def test_parser_logs_stderr_sets_stream():
-    cmd, args = _parse_args(["logs", "--stderr"])
+def test_parser_logs_stream_sets_stderr():
+    cmd, args = _parse_args(["logs", "--stream", "stderr"])
     assert cmd == "logs"
     assert args["stream"] == "stderr"
-    assert args["stderr"] is True
 
 
-def test_parser_logs_stream_overrides_alias():
-    cmd, args = _parse_args(["logs", "--stderr", "--stream", "stdout"])
-    assert cmd == "logs"
-    assert args["stream"] == "stdout"
-
-
-def test_parser_upstreams_fallbacks_list():
-    cmd, args = _parse_args(["upstreams", "fallbacks", "list"])
+def test_parser_upstreams_list():
+    cmd, args = _parse_args(["upstreams", "list"])
     assert cmd == "upstreams"
-    assert args["upstreams_cmd"] == "fallbacks"
-    assert args["fallbacks_cmd"] == "list"
+    assert args["upstreams_cmd"] == "list"
     assert args["ips"] == []
 
 
-def test_parser_upstreams_fallbacks_set_with_ips():
-    cmd, args = _parse_args(["upstreams", "fallbacks", "set", "9.9.9.9", "1.1.1.1"])
+def test_parser_upstreams_set_with_ips():
+    cmd, args = _parse_args(["upstreams", "set", "9.9.9.9", "1.1.1.1"])
     assert cmd == "upstreams"
-    assert args["upstreams_cmd"] == "fallbacks"
-    assert args["fallbacks_cmd"] == "set"
+    assert args["upstreams_cmd"] == "set"
     assert args["ips"] == ["9.9.9.9", "1.1.1.1"]
 
 
-def test_parser_upstreams_fallbacks_reset():
-    cmd, args = _parse_args(["upstreams", "fallbacks", "reset"])
+def test_parser_upstreams_reset():
+    cmd, args = _parse_args(["upstreams", "reset"])
     assert cmd == "upstreams"
-    assert args["fallbacks_cmd"] == "reset"
+    assert args["upstreams_cmd"] == "reset"

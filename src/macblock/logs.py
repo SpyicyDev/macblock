@@ -78,12 +78,7 @@ def _choose_auto_stream(paths: dict[str, Path]) -> str:
     return "stderr"
 
 
-def _resolve_log_path(
-    *, component: str, stream: str, stderr: bool
-) -> tuple[Path, str, list[Path]]:
-    if stderr:
-        stream = "stderr"
-
+def _resolve_log_path(*, component: str, stream: str) -> tuple[Path, str, list[Path]]:
     stream = (stream or "auto").strip().lower()
     if stream not in _VALID_STREAMS:
         raise MacblockError(f"invalid stream: {stream} (expected: auto|stdout|stderr)")
@@ -167,14 +162,14 @@ def _tail_lines(path: Path, count: int) -> list[str]:
 def _print_no_logs_hint(component: str, resolved_stream: str) -> None:
     if component == "daemon" and resolved_stream != "stderr":
         print("\nHint: The daemon writes most logs to stderr.", file=sys.stderr)
-        print("Hint: Try '--stream stderr' (or '--stderr').", file=sys.stderr)
+        print("Hint: Try '--stream stderr'.", file=sys.stderr)
 
     if component == "dnsmasq" and resolved_stream != "stderr":
         print(
             "\nHint: dnsmasq logs are usually written to stderr (log-facility=-).",
             file=sys.stderr,
         )
-        print("Hint: Try '--stream stderr' (or '--stderr').", file=sys.stderr)
+        print("Hint: Try '--stream stderr'.", file=sys.stderr)
 
     if component == "dnsmasq":
         print(
@@ -188,24 +183,11 @@ def show_logs(
     component: str,
     lines: int,
     follow: bool,
-    stderr: bool,
     stream: str = "auto",
 ) -> int:
-    """Display log output for a component.
-
-    Args:
-        component: Which component's logs to show ("daemon" or "dnsmasq")
-        lines: Number of lines to display
-        follow: If True, continuously follow the log (like tail -f)
-        stderr: Backwards-compatible flag to show stderr
-        stream: Which stream to show: auto|stdout|stderr
-
-    Returns:
-        Exit code (0 for success, 1 for error)
-    """
     try:
         path, resolved_stream, alternates = _resolve_log_path(
-            component=component, stream=stream, stderr=stderr
+            component=component, stream=stream
         )
     except MacblockError as e:
         print(f"error: {e}", file=sys.stderr)

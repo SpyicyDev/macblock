@@ -227,34 +227,27 @@ def _collect_upstream_defaults(state: State, exclude: set[str]) -> list[str]:
     defaults: list[str] = []
 
     resolvers = read_system_resolvers()
+    scutil_defaults: list[str] = []
     for ip in resolvers.defaults:
-        if _is_forward_ip(ip) and ip not in defaults:
-            defaults.append(ip)
+        if _is_forward_ip(ip) and ip not in scutil_defaults:
+            scutil_defaults.append(ip)
 
+    dhcp_defaults: list[str] = []
     for info in compute_managed_services(exclude=exclude):
         for ip in read_dhcp_nameservers(info.device or ""):
-            if _is_forward_ip(ip) and ip not in defaults:
+            if _is_forward_ip(ip) and ip not in dhcp_defaults:
+                dhcp_defaults.append(ip)
+
+    defaults.extend(scutil_defaults)
+
+    if dhcp_defaults:
+        for ip in dhcp_defaults:
+            if ip not in defaults:
                 defaults.append(ip)
-
-    for service, backup_data in state.dns_backup.items():
-        if not isinstance(backup_data, dict):
-            continue
-
-        dns_servers = backup_data.get("dns")
-        if isinstance(dns_servers, list):
-            for ip in dns_servers:
-                if isinstance(ip, str) and _is_forward_ip(ip) and ip not in defaults:
-                    defaults.append(ip)
-
-        dhcp_servers = backup_data.get("dhcp")
-        if isinstance(dhcp_servers, list):
-            for ip in dhcp_servers:
-                if isinstance(ip, str) and _is_forward_ip(ip) and ip not in defaults:
-                    defaults.append(ip)
-
-    if not defaults:
-        fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
-        defaults = fallbacks if fallbacks else ["1.1.1.1", "8.8.8.8"]
+    else:
+        if not defaults:
+            fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
+            defaults = fallbacks if fallbacks else ["1.1.1.1", "8.8.8.8"]
 
     return defaults
 
