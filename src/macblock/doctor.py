@@ -16,6 +16,7 @@ from macblock.constants import (
     SYSTEM_LOG_DIR,
     SYSTEM_RAW_BLOCKLIST_FILE,
     SYSTEM_STATE_FILE,
+    SYSTEM_UPSTREAM_FALLBACKS_FILE,
     SYSTEM_VERSION_FILE,
     VAR_DB_DAEMON_PID,
     VAR_DB_DAEMON_READY,
@@ -24,6 +25,7 @@ from macblock.constants import (
     VAR_DB_UPSTREAM_CONF,
 )
 from macblock.exec import run
+from macblock.resolvers import parse_upstream_conf, read_fallback_upstreams
 from macblock.state import load_state
 from macblock.system_dns import get_dns_servers
 from macblock.ui import (
@@ -195,21 +197,38 @@ def run_diagnostics() -> int:
     subheader("Upstream DNS")
     if VAR_DB_UPSTREAM_CONF.exists():
         try:
-            upstream_text = VAR_DB_UPSTREAM_CONF.read_text(encoding="utf-8")
-            server_count = upstream_text.count("server=")
-        except Exception:
-            server_count = 0
-
-        if server_count == 0:
-            status_err("Servers", "0 (none configured)")
-            issues.append("no upstream DNS servers configured")
-            suggestions.append(
-                "sudo launchctl kickstart -k system/com.local.macblock.daemon"
+            upstream_text = VAR_DB_UPSTREAM_CONF.read_text(
+                encoding="utf-8", errors="replace"
             )
+            info = parse_upstream_conf(upstream_text)
+        except Exception:
+            info = None
+
+        if info is None:
+            status_err("Config", "unreadable")
         else:
-            status_ok("Servers", str(server_count))
+            total = len(info.defaults) + info.per_domain_rule_count
+            if total == 0:
+                status_err("Servers", "0 (none configured)")
+                issues.append("no upstream DNS servers configured")
+                suggestions.append(
+                    "sudo launchctl kickstart -k system/com.local.macblock.daemon"
+                )
+            else:
+                status_ok("Servers", str(total))
+
+            if info.defaults:
+                status_info("Defaults", ", ".join(info.defaults))
+            if info.per_domain_rule_count:
+                status_info("Per-domain", str(info.per_domain_rule_count))
     else:
         status_err("Config", "not found")
+
+    fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
+    if fallbacks:
+        status_info("Fallbacks", ", ".join(fallbacks))
+    else:
+        status_info("Fallbacks", "none")
 
     # dnsmasq process
     subheader("dnsmasq Process")

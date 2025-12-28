@@ -9,14 +9,29 @@ from macblock.constants import (
     LAUNCHD_DAEMON_PLIST,
     LAUNCHD_DNSMASQ_PLIST,
     SYSTEM_STATE_FILE,
+    SYSTEM_UPSTREAM_FALLBACKS_FILE,
     VAR_DB_DAEMON_PID,
     VAR_DB_DAEMON_READY,
 )
 from macblock.errors import MacblockError
 from macblock.launchd import kickstart
 from macblock.state import load_state, replace_state, save_state_atomic
+from macblock.resolvers import (
+    parse_fallback_upstreams,
+    read_fallback_upstreams,
+    render_fallback_upstreams,
+)
 from macblock.system_dns import compute_managed_services, get_dns_servers
-from macblock.ui import Spinner, result_success, step_warn
+from macblock.ui import (
+    Spinner,
+    header,
+    list_item,
+    result_success,
+    status_info,
+    status_warn,
+    subheader,
+    step_warn,
+)
 
 
 DEFAULT_TIMEOUT = 10.0
@@ -262,5 +277,119 @@ def do_resume() -> int:
         spinner.succeed("Blocking resumed")
 
     result_success("DNS blocking is now active")
+    print()
+    return 0
+
+
+def _atomic_write(path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+    try:
+        path.chmod(0o644)
+    except Exception:
+        pass
+
+
+def do_upstreams_fallbacks_list() -> int:
+    _check_installed()
+    print()
+
+    header("🌐", "macblock upstream fallbacks")
+    status_info("Config file", str(SYSTEM_UPSTREAM_FALLBACKS_FILE))
+
+    fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
+    if not fallbacks:
+        status_warn("Configured", "none (using built-in defaults)")
+        print()
+        return 0
+
+    subheader("Configured")
+    for ip in fallbacks:
+        list_item(ip)
+
+    print()
+    return 0
+
+
+def do_upstreams_fallbacks_set(ips: list[str]) -> int:
+    _check_installed()
+    print()
+
+    header("🌐", "set upstream fallback DNS")
+    status_info("Config file", str(SYSTEM_UPSTREAM_FALLBACKS_FILE))
+
+    current = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
+    if current:
+        subheader("Current")
+        for ip in current:
+            list_item(ip)
+
+    desired = parse_fallback_upstreams("\n".join(ips))
+    if not desired:
+        raw = input("Enter fallback upstream IPs (comma/space separated): ").strip()
+        desired = parse_fallback_upstreams(raw)
+
+    if not desired:
+        raise MacblockError("no valid IPs provided")
+
+    subheader("New")
+    for ip in desired:
+        list_item(ip)
+
+    confirm = (
+        input("Write these fallbacks and trigger daemon reconcile? [y/N] ")
+        .strip()
+        .lower()
+    )
+    if confirm not in {"y", "yes"}:
+        print()
+        return 0
+
+    with Spinner("Writing fallback config") as spinner:
+        try:
+            _atomic_write(
+                SYSTEM_UPSTREAM_FALLBACKS_FILE, render_fallback_upstreams(desired)
+            )
+            spinner.succeed("Fallback config written")
+        except Exception as e:
+            spinner.fail(f"Could not write config: {e}")
+            raise
+
+    with Spinner("Triggering daemon") as spinner:
+        if _trigger_daemon():
+            spinner.succeed("Daemon signaled")
+        else:
+            spinner.warn("Could not signal daemon")
+
+    result_success("Upstream fallbacks updated")
+    print()
+    return 0
+
+
+def do_upstreams_fallbacks_reset() -> int:
+    _check_installed()
+    print()
+
+    header("🌐", "reset upstream fallback DNS")
+    status_info("Config file", str(SYSTEM_UPSTREAM_FALLBACKS_FILE))
+
+    with Spinner("Removing fallback config") as spinner:
+        try:
+            if SYSTEM_UPSTREAM_FALLBACKS_FILE.exists():
+                SYSTEM_UPSTREAM_FALLBACKS_FILE.unlink()
+            spinner.succeed("Fallback config removed")
+        except Exception as e:
+            spinner.fail(f"Could not remove config: {e}")
+            raise
+
+    with Spinner("Triggering daemon") as spinner:
+        if _trigger_daemon():
+            spinner.succeed("Daemon signaled")
+        else:
+            spinner.warn("Could not signal daemon")
+
+    result_success("Upstream fallbacks reset")
     print()
     return 0

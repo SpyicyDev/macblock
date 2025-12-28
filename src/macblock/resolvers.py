@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from macblock.exec import run
 
@@ -74,3 +76,75 @@ def render_dnsmasq_upstreams(resolvers: Resolvers) -> str:
             lines.append(f"server=/{dom}/{ip}")
 
     return "\n".join(lines) + "\n"
+
+
+@dataclass(frozen=True)
+class UpstreamConf:
+    defaults: list[str]
+    per_domain_rule_count: int
+
+
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
+
+def parse_upstream_conf(text: str) -> UpstreamConf:
+    defaults: list[str] = []
+    per_domain = 0
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line.startswith("server="):
+            continue
+
+        server = line.removeprefix("server=")
+        if server.startswith("/"):
+            per_domain += 1
+            continue
+
+        if _is_ip(server) and server not in defaults:
+            defaults.append(server)
+
+    return UpstreamConf(defaults=defaults, per_domain_rule_count=per_domain)
+
+
+def parse_fallback_upstreams(text: str) -> list[str]:
+    ips: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+
+        for token in line.replace(",", " ").split():
+            if _is_ip(token) and token not in ips:
+                ips.append(token)
+
+    return ips
+
+
+def read_fallback_upstreams(path: Path) -> list[str]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    except PermissionError:
+        return []
+    except OSError:
+        return []
+
+    return parse_fallback_upstreams(text)
+
+
+def render_fallback_upstreams(ips: list[str]) -> str:
+    cleaned = [ip for ip in ips if isinstance(ip, str) and _is_ip(ip)]
+    out = ["# macblock upstream fallbacks", "# one IP per line", ""]
+    out.extend(cleaned)
+    return "\n".join(out) + "\n"

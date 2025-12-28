@@ -72,3 +72,25 @@ def test_parser_logs_stream_overrides_alias():
     cmd, args = _parse_args(["logs", "--stderr", "--stream", "stdout"])
     assert cmd == "logs"
     assert args["stream"] == "stdout"
+
+
+def test_parser_upstreams_fallbacks_list():
+    cmd, args = _parse_args(["upstreams", "fallbacks", "list"])
+    assert cmd == "upstreams"
+    assert args["upstreams_cmd"] == "fallbacks"
+    assert args["fallbacks_cmd"] == "list"
+    assert args["ips"] == []
+
+
+def test_parser_upstreams_fallbacks_set_with_ips():
+    cmd, args = _parse_args(["upstreams", "fallbacks", "set", "9.9.9.9", "1.1.1.1"])
+    assert cmd == "upstreams"
+    assert args["upstreams_cmd"] == "fallbacks"
+    assert args["fallbacks_cmd"] == "set"
+    assert args["ips"] == ["9.9.9.9", "1.1.1.1"]
+
+
+def test_parser_upstreams_fallbacks_reset():
+    cmd, args = _parse_args(["upstreams", "fallbacks", "reset"])
+    assert cmd == "upstreams"
+    assert args["fallbacks_cmd"] == "reset"

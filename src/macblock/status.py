@@ -9,11 +9,14 @@ from macblock.constants import (
     LAUNCHD_DNSMASQ_PLIST,
     SYSTEM_BLOCKLIST_FILE,
     SYSTEM_STATE_FILE,
+    SYSTEM_UPSTREAM_FALLBACKS_FILE,
     VAR_DB_DAEMON_PID,
     VAR_DB_DAEMON_LAST_APPLY,
     VAR_DB_DNSMASQ_PID,
+    VAR_DB_UPSTREAM_CONF,
 )
 from macblock.exec import run
+from macblock.resolvers import parse_upstream_conf, read_fallback_upstreams
 from macblock.state import load_state
 from macblock.system_dns import get_dns_servers
 from macblock.ui import (
@@ -27,6 +30,13 @@ from macblock.ui import (
     status_warn,
     subheader,
 )
+
+
+def _format_list(items: list[str], *, max_items: int = 4) -> str:
+    if len(items) <= max_items:
+        return ", ".join(items)
+    shown = ", ".join(items[:max_items])
+    return f"{shown} (+{len(items) - max_items} more)"
 
 
 def _read_pid(path) -> int | None:
@@ -137,6 +147,34 @@ def show_status() -> int:
         for svc in st.managed_services:
             servers = get_dns_servers(svc)
             dns_status(svc, servers, is_active=True, is_blocking=is_blocking)
+
+    subheader("Upstream DNS")
+
+    if VAR_DB_UPSTREAM_CONF.exists():
+        try:
+            upstream_text = VAR_DB_UPSTREAM_CONF.read_text(
+                encoding="utf-8", errors="replace"
+            )
+            info = parse_upstream_conf(upstream_text)
+        except Exception:
+            info = None
+
+        if info is None:
+            status_warn("upstream.conf", "unreadable")
+        else:
+            if info.defaults:
+                status_info("Defaults", _format_list(info.defaults))
+            else:
+                status_warn("Defaults", "none")
+            status_info("Per-domain", str(info.per_domain_rule_count))
+    else:
+        status_warn("upstream.conf", "not found")
+
+    fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
+    if fallbacks:
+        status_info("Fallbacks", _format_list(fallbacks))
+    else:
+        status_info("Fallbacks", "none")
 
     # Installation status
     subheader("Installation")

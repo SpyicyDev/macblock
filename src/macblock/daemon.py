@@ -14,6 +14,7 @@ import time
 from macblock.constants import (
     SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
     SYSTEM_STATE_FILE,
+    SYSTEM_UPSTREAM_FALLBACKS_FILE,
     VAR_DB_DAEMON_PID,
     VAR_DB_DAEMON_READY,
     VAR_DB_DAEMON_LAST_APPLY,
@@ -21,7 +22,7 @@ from macblock.constants import (
     VAR_DB_UPSTREAM_CONF,
 )
 from macblock.exec import run
-from macblock.resolvers import read_system_resolvers
+from macblock.resolvers import read_fallback_upstreams, read_system_resolvers
 from macblock.state import load_state, save_state_atomic, replace_state, State
 from macblock.system_dns import (
     compute_managed_services,
@@ -252,7 +253,8 @@ def _collect_upstream_defaults(state: State, exclude: set[str]) -> list[str]:
                     defaults.append(ip)
 
     if not defaults:
-        defaults = ["1.1.1.1", "8.8.8.8"]
+        fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
+        defaults = fallbacks if fallbacks else ["1.1.1.1", "8.8.8.8"]
 
     return defaults
 
