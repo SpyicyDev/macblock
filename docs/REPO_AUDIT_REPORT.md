@@ -54,13 +54,13 @@ This report covers:
 - Current UX can claim “Blocklist updated” even when no new `blocklist.*` files were produced; users may think they’re protected while dnsmasq continues using the previous compiled rules.
 
 3) Implementation steps (ordered checklist, minimal diffs, guardrails)
-- Decide the desired contract for “small” blocklists (threshold is currently hard-coded as `1000` at `src/macblock/blocklists.py:232`). Recommended default: **fail-fast** for `<1000` to avoid silently applying likely-bad downloads.
-- Option A (recommended): fail-fast (no state drift)
-  - In the compile spinner block, replace the warn-only path with an explicit failure:
-    - When `count_raw < 1000`, call `spinner.fail(...)` and raise `MacblockError` (import already present at `src/macblock/blocklists.py:20`).
-    - Include remediation in the error message: “If you intentionally use a small custom list, consider using a different source or add an override flag/config” (see optional enhancements below).
-  - Ensure the failure occurs **before** `save_state_atomic(...)` (`src/macblock/blocklists.py:245`) and before `reload_dnsmasq()` (`src/macblock/blocklists.py:53`).
-  - Guardrail: do not print `result_success(...)` (`src/macblock/blocklists.py:258`) on this path.
+- [x] Decide the desired contract for “small” blocklists (threshold is currently hard-coded as `1000` at `src/macblock/blocklists.py:232`). Recommended default: **fail-fast** for `<1000` to avoid silently applying likely-bad downloads.
+- [x] Option A (recommended): fail-fast (no state drift)
+  - [x] In the compile spinner block, replace the warn-only path with an explicit failure:
+    - [x] When `count_raw < 1000`, call `spinner.fail(...)` and raise `MacblockError` (import already present at `src/macblock/blocklists.py:20`).
+    - [x] Include remediation in the error message: “If you intentionally use a small custom list, consider using a different source or add an override flag/config” (see optional enhancements below).
+  - [x] Ensure the failure occurs **before** `save_state_atomic(...)` (`src/macblock/blocklists.py:245`) and before `reload_dnsmasq()` (`src/macblock/blocklists.py:53`).
+  - [x] Guardrail: do not print `result_success(...)` (`src/macblock/blocklists.py:258`) on this path.
 - Option B (alternative): apply-small (warn + still apply)
   - Move the `atomic_write_text(SYSTEM_RAW_BLOCKLIST_FILE, ...)` (`src/macblock/blocklists.py:235`) and `compile_blocklist(...)` call (`src/macblock/blocklists.py:236`) out of the `else:` so compilation happens for both large and small lists.
   - Keep a warning for `count_raw < 1000`, but ensure:
@@ -69,17 +69,17 @@ This report covers:
 - Optional enhancement (defer if keeping diffs minimal): make the threshold configurable for custom URLs only (e.g., `--min-domains` flag) to support curated small lists without loosening safety for built-in sources.
 
 4) Tests (exact tests to add/adjust, what to assert, how to simulate without privilege)
-- Extend `tests/test_blocklists.py` (currently only covers `compile_blocklist` at `tests/test_blocklists.py:6`).
-- Add unit tests for `update_blocklist` using `monkeypatch` (no network, no `/Library` writes):
-  - Monkeypatch `macblock.blocklists._download` (`src/macblock/blocklists.py:106`) to return controlled content.
-  - Monkeypatch `macblock.blocklists.atomic_write_text`, `macblock.blocklists.save_state_atomic`, and `macblock.blocklists.reload_dnsmasq` to record calls.
-  - Use `capsys` to assert messaging (e.g., `result_success(...)` output) is/ isn’t printed.
-- Suggested cases:
-  - Small list (<1000 domains) should **not** report success without applying:
-    - If Option A: assert `update_blocklist(...)` raises `MacblockError`; assert `save_state_atomic` and `reload_dnsmasq` not called.
+- [x] Extend `tests/test_blocklists.py` (currently only covers `compile_blocklist` at `tests/test_blocklists.py:6`).
+- [x] Add unit tests for `update_blocklist` using `monkeypatch` (no network, no `/Library` writes):
+  - [x] Monkeypatch `macblock.blocklists._download` (`src/macblock/blocklists.py:106`) to return controlled content.
+  - [x] Monkeypatch `macblock.blocklists.atomic_write_text`, `macblock.blocklists.save_state_atomic`, and `macblock.blocklists.reload_dnsmasq` to record calls.
+  - [x] Use `capsys` to assert messaging (e.g., `result_success(...)` output) is/ isn’t printed.
+- [x] Suggested cases:
+  - [x] Small list (<1000 domains) should **not** report success without applying:
+    - [x] If Option A: assert `update_blocklist(...)` raises `MacblockError`; assert `save_state_atomic` and `reload_dnsmasq` not called.
     - If Option B: assert compilation/writes happen and success message indicates “small list applied”.
-  - HTML detection path: `_download` returns HTML-like prefix; assert `MacblockError` at `src/macblock/blocklists.py:224`; assert no writes/state/reload.
-  - SHA mismatch path: `_download(... expected_sha256=...)` raises `MacblockError` at `src/macblock/blocklists.py:133`; assert no writes/state/reload.
+  - [x] HTML detection path: `_download` returns HTML-like prefix; assert `MacblockError` at `src/macblock/blocklists.py:224`; assert no writes/state/reload.
+  - [x] SHA mismatch path: `_download(... expected_sha256=...)` raises `MacblockError` at `src/macblock/blocklists.py:133`; assert no writes/state/reload.
 
 5) Risks & tradeoffs (compatibility, behavior change, rollout concerns)
 - Option A may break users who intentionally use small custom lists; mitigate via an explicit override (flag/config) and clear error guidance.
@@ -87,9 +87,9 @@ This report covers:
 - Any change here is user-visible; treat as a behavior-contract change and document it.
 
 6) Acceptance criteria (what “done” looks like)
-- `macblock update` never prints `Blocklist updated: 0 domains blocked` when compilation was skipped.
-- State updates, blocklist file writes, and dnsmasq reload either all occur together or none occur.
-- Added tests exercise the small-list branch and fail prior behavior.
+- [x] `macblock update` never prints `Blocklist updated: 0 domains blocked` when compilation was skipped.
+- [x] State updates, blocklist file writes, and dnsmasq reload either all occur together or none occur.
+- [x] Added tests exercise the small-list branch and fail prior behavior.
 
 ### B. Subprocess wrapper may crash on non-UTF8 output
 
