@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from macblock.errors import MacblockError
 from macblock.fs import atomic_write_text
 
 # Schema version for state.json - increment when making breaking changes.
@@ -49,7 +50,24 @@ def load_state(path: Path) -> State:
             resolver_domains=[],
         )
 
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        raise MacblockError(
+            f"failed to read state file: {path} ({e}); delete it to reset to defaults"
+        )
+
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        raise MacblockError(
+            f"state file is corrupt: {path} ({e}); delete it to reset to defaults"
+        )
+
+    if not isinstance(data, dict):
+        raise MacblockError(
+            f"state file must be a JSON object: {path}; delete it to reset to defaults"
+        )
 
     enabled_raw = data.get("enabled")
     enabled = bool(enabled_raw) if enabled_raw is not None else False
@@ -97,7 +115,12 @@ def load_state(path: Path) -> State:
             if isinstance(d, str) and d:
                 resolver_domains.append(d)
 
-    schema_version = int(data.get("schema_version", CURRENT_SCHEMA_VERSION))
+    try:
+        schema_version = int(data.get("schema_version", CURRENT_SCHEMA_VERSION))
+    except (TypeError, ValueError) as e:
+        raise MacblockError(
+            f"invalid schema_version in state file: {path} ({e}); delete it to reset to defaults"
+        )
     if schema_version != CURRENT_SCHEMA_VERSION:
         print(
             f"warning: state.json schema_version={schema_version}, expected {CURRENT_SCHEMA_VERSION}",

@@ -1,4 +1,7 @@
-from macblock.state import State, save_state_atomic
+import pytest
+
+from macblock.errors import MacblockError
+from macblock.state import State, load_state, save_state_atomic
 
 
 def test_save_state_atomic_pins_mode(tmp_path) -> None:
@@ -38,3 +41,33 @@ def test_save_state_atomic_writes_json(tmp_path) -> None:
     assert '"enabled": true' in text
     assert '"resume_at_epoch": 123' in text
     assert text.endswith("\n")
+
+
+def test_load_state_raises_on_invalid_json(tmp_path) -> None:
+    path = tmp_path / "state.json"
+    path.write_text("{ invalid", encoding="utf-8")
+
+    with pytest.raises(MacblockError, match=r"corrupt"):
+        load_state(path)
+
+
+def test_load_state_raises_on_non_object_json(tmp_path) -> None:
+    path = tmp_path / "state.json"
+    path.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(MacblockError, match=r"JSON object"):
+        load_state(path)
+
+
+def test_load_state_raises_on_invalid_schema_version(tmp_path) -> None:
+    path = tmp_path / "state.json"
+    path.write_text('{"schema_version": "two"}', encoding="utf-8")
+
+    with pytest.raises(MacblockError, match=r"schema_version"):
+        load_state(path)
+
+
+def test_load_state_returns_default_when_missing(tmp_path) -> None:
+    st = load_state(tmp_path / "missing.json")
+    assert st.enabled is False
+    assert st.resume_at_epoch is None
