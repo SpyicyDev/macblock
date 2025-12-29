@@ -17,6 +17,8 @@ def run(cmd: list[str], *, timeout: float | None = 10.0) -> RunResult:
             cmd,
             check=False,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout,
