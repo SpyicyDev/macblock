@@ -318,27 +318,27 @@ External support
 - On IPv6-only networks, the default route can exist but `ipconfig getifaddr` will never return a usable IPv4 address, causing repeated timeouts and noisy “applying anyway” behavior.
 
 3) Implementation steps (ordered checklist, minimal diffs, guardrails)
-- Recommended minimal diff: treat network as “ready” when the default route interface has **either** IPv4 **or** IPv6.
-- In `src/macblock/daemon.py`:
-  - Add an IPv6 detector alongside `_get_interface_ipv4`:
-    - New regex (basic) for IPv6 strings (optionally including a zone id, e.g. `%en0`).
-    - New helper `_get_interface_ipv6(interface: str) -> str | None` that runs `/usr/sbin/ipconfig getv6ifaddr <iface>` with a short timeout, similar to `src/macblock/daemon.py:114`.
-  - Update `_network_ready` (`src/macblock/daemon.py:122`) to:
-    - Prefer IPv4 if available.
-    - Fall back to IPv6 if IPv4 is absent.
-    - Only report “not ready” if neither address is available.
-  - Guardrail: update the “reason” string so it is no longer IPv4-specific (e.g., change `"no IPv4 for ..."` at `src/macblock/daemon.py:129` to `"no IP for ..."`).
+- [x] Recommended minimal diff: treat network as “ready” when the default route interface has **either** IPv4 **or** IPv6.
+- [x] In `src/macblock/daemon.py`:
+  - [x] Add an IPv6 detector alongside `_get_interface_ipv4`:
+    - [x] New regex (basic) for IPv6 strings (optionally including a zone id, e.g. `%en0`).
+    - [x] New helper `_get_interface_ipv6(interface: str) -> str | None` that runs `/usr/sbin/ipconfig getv6ifaddr <iface>` with a short timeout, similar to `src/macblock/daemon.py:114`.
+  - [x] Update `_network_ready` (`src/macblock/daemon.py:122`) to:
+    - [x] Prefer IPv4 if available.
+    - [x] Fall back to IPv6 if IPv4 is absent.
+    - [x] Only report “not ready” if neither address is available.
+  - [x] Guardrail: update the “reason” string so it is no longer IPv4-specific (e.g., change `"no IPv4 for ..."` at `src/macblock/daemon.py:129` to `"no IP for ..."`).
 
 4) Tests (exact tests to add/adjust, what to assert, how to simulate without privilege)
-- Extend `tests/test_daemon.py` (already covers IPv4 readiness):
-  - Existing IPv4 readiness test is `test_wait_for_network_ready_waits_until_route_and_ip` (`tests/test_daemon.py:249-276`). Keep it to preserve current behavior.
-  - Add a new IPv6-only readiness test (recommended name: `test_wait_for_network_ready_ipv6_only`) that:
+- [x] Extend `tests/test_daemon.py` (already covers IPv4 readiness):
+  - [x] Existing IPv4 readiness test is `test_wait_for_network_ready_waits_until_route_and_ip` (`tests/test_daemon.py:249-276`). Keep it to preserve current behavior.
+  - [x] Add a new IPv6-only readiness test (recommended name: `test_wait_for_network_ready_ipv6_only`) that:
     - Reuses `_FakeClock` and patches `daemon.time.time/sleep` like existing tests (`tests/test_daemon.py:252-254`).
     - Monkeypatches `daemon.run` so:
       - `['/sbin/route','-n','get','default']` returns `interface: en0`.
       - `['/usr/sbin/ipconfig','getifaddr','en0']` always returns `returncode=1` (no IPv4).
       - `['/usr/sbin/ipconfig','getv6ifaddr','en0']` returns `returncode=0` and a valid IPv6 address.
-    - Asserts `daemon._wait_for_network_ready(15.0)` returns `True` without requiring `15s` of simulated time.
+    - [x] Asserts `daemon._wait_for_network_ready(15.0)` returns `True` without requiring `15s` of simulated time.
 - Keep the existing timeout test `test_wait_for_network_ready_times_out` (`tests/test_daemon.py:278-293`) and update it only if the “reason” log message becomes less IPv4-specific.
 
 5) Risks & tradeoffs (compatibility, behavior change, rollout concerns)
@@ -346,9 +346,9 @@ External support
 - Separate consideration: dnsmasq is configured for `127.0.0.1` (IPv4 loopback). IPv6-only client DNS behavior may still not work; this finding is only about readiness gating, not the full IPv6 DNS story.
 
 6) Acceptance criteria (what “done” looks like)
-- On IPv6-only networks, readiness checks succeed without waiting for IPv4.
-- Existing IPv4 readiness behavior remains unchanged.
-- Unit tests cover the IPv6-only path.
+- [x] On IPv6-only networks, readiness checks succeed without waiting for IPv4.
+- [x] Existing IPv4 readiness behavior remains unchanged.
+- [x] Unit tests cover the IPv6-only path.
 
 ### H. Managed service selection is heuristic and may misclassify
 
@@ -406,13 +406,13 @@ External support
 3) Implementation steps (ordered checklist, minimal diffs, guardrails)
 - Provide two designs and choose one intentionally.
 
-Design A (recommended): exit-after-N consecutive failures
-- Replace the “continuing anyway” reset behavior (`src/macblock/daemon.py:622-626` and `src/macblock/daemon.py:632-636`) with an exit path:
-  - Log an explicit message (keep `_log(...)` usage) indicating the daemon is exiting to let launchd restart.
-  - Exit with non-zero status (e.g., `return 1`) from `run_daemon`.
+- [x] Design A (recommended): exit-after-N consecutive failures
+- [x] Replace the “continuing anyway” reset behavior (`src/macblock/daemon.py:622-626` and `src/macblock/daemon.py:632-636`) with an exit path:
+  - [x] Log an explicit message (keep `_log(...)` usage) indicating the daemon is exiting to let launchd restart.
+  - [x] Exit with non-zero status (e.g., `return 1`) from `run_daemon`.
 - Guardrails:
-  - Ensure the `finally` block runs to remove marker files (`src/macblock/daemon.py:672-675`). Returning from inside the `try` should still execute `finally`.
-  - Do not exit on a single transient failure; keep threshold (`max_consecutive_failures`) as the guard.
+  - [x] Ensure the `finally` block runs to remove marker files (`src/macblock/daemon.py:672-675`). Returning from inside the `try` should still execute `finally`.
+  - [x] Do not exit on a single transient failure; keep threshold (`max_consecutive_failures`) as the guard.
 
 Design B (alternative): exponential backoff + persistent “failed” marker surfaced in status/doctor
 - When `consecutive_failures >= max_consecutive_failures`, do not reset to 0 silently.
@@ -423,13 +423,13 @@ Design B (alternative): exponential backoff + persistent “failed” marker sur
   - `src/macblock/doctor.py:run_diagnostics` should include an issue and a restart suggestion.
 
 4) Tests (exact tests to add/adjust, what to assert, how to simulate without privilege)
-- For Design A (exit-after-N):
-  - Add a targeted unit test in `tests/test_daemon.py` that monkeypatches:
+- [x] For Design A (exit-after-N):
+  - [x] Add a targeted unit test in `tests/test_daemon.py` that monkeypatches:
     - `daemon._apply_state` to always return `(False, ["issue"])`.
     - `daemon._wait_for_network_change_or_signal` to return immediately (e.g., `("timeout", 0)`) and avoid real subprocesses.
     - `daemon.load_state` to return a minimal `State` and `daemon._should_wait_for_network_before_apply` to `False`.
     - `daemon.VAR_DB_DAEMON_PID/READY/LAST_APPLY` to `tmp_path` to avoid `/var/db`.
-  - Assert `run_daemon()` returns `1` after `max_consecutive_failures` iterations.
+  - [x] Assert `run_daemon()` returns `1` after `max_consecutive_failures` iterations.
 - For Design B (marker/backoff):
   - Add unit tests that assert marker creation after threshold and removal after success, using patched marker path under `tmp_path`.
   - Add a `status`/`doctor` test that injects the marker and asserts messaging (requires capturing output).
@@ -439,10 +439,10 @@ Design B (alternative): exponential backoff + persistent “failed” marker sur
 - Design B keeps the daemon “running” but adds complexity and requires good UI surfacing; without that, it risks masking failures longer.
 
 6) Acceptance criteria (what “done” looks like)
-- Persistent apply failures become visible without reading logs:
-  - Either via launchd restart behavior (Design A), or
-  - Via explicit “failed” status in `macblock status` / `macblock doctor` (Design B).
-- No more infinite “continuing anyway” loops after repeated failures.
+- [x] Persistent apply failures become visible without reading logs:
+  - [x] Either via launchd restart behavior (Design A), or
+  - Via explicit “failed” status in `macblock status` / `macblock doctor` (Design B, not implemented).
+- [x] No more infinite “continuing anyway” loops after repeated failures.
 
 ### J. Daemon marker files are written non-atomically
 
