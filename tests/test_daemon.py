@@ -309,6 +309,36 @@ def test_wait_for_network_ready_waits_until_route_and_ip(
     assert clock.now >= 1.0
 
 
+def test_wait_for_network_ready_ipv6_only(monkeypatch: pytest.MonkeyPatch):
+    clock = _FakeClock()
+    monkeypatch.setattr(daemon.time, "time", clock.time)
+    monkeypatch.setattr(daemon.time, "sleep", clock.sleep)
+    monkeypatch.setattr(daemon, "_shutdown_requested", False)
+    monkeypatch.setattr(daemon, "_trigger_apply", False)
+
+    def _run(cmd: list[str], *, timeout: float | None = 10.0) -> RunResult:
+        if cmd == ["/sbin/route", "-n", "get", "default"]:
+            if clock.now < 1.0:
+                return RunResult(returncode=1, stdout="", stderr="not in table")
+            return RunResult(returncode=0, stdout="interface: en0\n", stderr="")
+
+        if cmd == ["/usr/sbin/ipconfig", "getifaddr", "en0"]:
+            return RunResult(returncode=1, stdout="", stderr="")
+
+        if cmd == ["/usr/sbin/ipconfig", "getv6ifaddr", "en0"]:
+            if clock.now < 1.0:
+                return RunResult(returncode=1, stdout="", stderr="")
+            return RunResult(returncode=0, stdout="fe80::1234%en0\n", stderr="")
+
+        raise AssertionError(f"unexpected cmd: {cmd}")
+
+    monkeypatch.setattr(daemon, "run", _run)
+
+    ok = daemon._wait_for_network_ready(15.0)
+    assert ok is True
+    assert clock.now >= 1.0
+
+
 def test_wait_for_network_ready_times_out(monkeypatch: pytest.MonkeyPatch):
     clock = _FakeClock()
     monkeypatch.setattr(daemon.time, "time", clock.time)

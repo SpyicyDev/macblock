@@ -90,6 +90,7 @@ def _read_pid_file(path) -> int | None:
 
 
 _IPV4_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+_IPV6_RE = re.compile(r"^(?=.*:)[0-9A-Fa-f:]+(%[0-9A-Za-z._-]+)?$")
 
 
 def _get_default_route_interface() -> str | None:
@@ -119,6 +120,18 @@ def _get_interface_ipv4(interface: str) -> str | None:
     return ip if _IPV4_RE.match(ip) else None
 
 
+def _get_interface_ipv6(interface: str) -> str | None:
+    if not interface:
+        return None
+
+    r = run(["/usr/sbin/ipconfig", "getv6ifaddr", interface], timeout=2.0)
+    if r.returncode != 0:
+        return None
+
+    ip = (r.stdout or "").strip()
+    return ip if _IPV6_RE.match(ip) else None
+
+
 def _network_ready() -> tuple[bool, str, str | None, str | None]:
     interface = _get_default_route_interface()
     if not interface:
@@ -126,7 +139,10 @@ def _network_ready() -> tuple[bool, str, str | None, str | None]:
 
     ip = _get_interface_ipv4(interface)
     if not ip:
-        return False, f"no IPv4 for {interface}", interface, None
+        ip = _get_interface_ipv6(interface)
+
+    if not ip:
+        return False, f"no IP for {interface}", interface, None
 
     return True, "", interface, ip
 
