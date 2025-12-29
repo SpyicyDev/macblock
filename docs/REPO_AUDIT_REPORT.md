@@ -489,35 +489,35 @@ Design B (alternative): exponential backoff + persistent “failed” marker sur
 - tmp+replace without explicit `chmod` allows file permissions to drift based on process umask. These files are read by other components (`status`/`doctor`) and are part of the user-facing “filesystem footprint” contract.
 
 3) Implementation steps (ordered checklist, minimal diffs, guardrails)
-- Establish a policy: generated config/state files should be written with `0o644` unless there is a specific reason to restrict further.
-- Update the known sites:
-  - `src/macblock/state.py:save_state_atomic`:
-    - After `tmp.replace(path)` (`src/macblock/state.py:146`), add `os.chmod(path, 0o644)` (import already exists in `src/macblock/fs.py`, but `state.py` currently does not import `os`).
-    - Alternatively, replace the tmp+replace block with `atomic_write_text(path, json_text, mode=0o644)`.
-  - `src/macblock/daemon.py:_update_upstreams`:
-    - Replace the manual tmp+replace at `src/macblock/daemon.py:281-285` with `atomic_write_text(VAR_DB_UPSTREAM_CONF, conf_text, mode=0o644)`.
-  - `src/macblock/control.py:_atomic_write`:
-    - Either replace implementation with `atomic_write_text(path, text, mode=0o644)`.
-    - Or keep the current approach but make `chmod` failures visible (do not silently ignore at `src/macblock/control.py:91-92`), because silent permission drift defeats the point of the fix.
-- Guardrail: ensure any callers that rely on reading these files without root remain able to do so (i.e., do not tighten to `0o600` unless you also adjust UX/docs).
+- [x] Establish a policy: generated config/state files should be written with `0o644` unless there is a specific reason to restrict further.
+- [x] Update the known sites:
+  - [x] `src/macblock/state.py:save_state_atomic`:
+    - [x] After `tmp.replace(path)` (`src/macblock/state.py:146`), add `os.chmod(path, 0o644)` (import already exists in `src/macblock/fs.py`, but `state.py` currently does not import `os`).
+    - [x] Alternatively, replace the tmp+replace block with `atomic_write_text(path, json_text, mode=0o644)`.
+  - [x] `src/macblock/daemon.py:_update_upstreams`:
+    - [x] Replace the manual tmp+replace at `src/macblock/daemon.py:281-285` with `atomic_write_text(VAR_DB_UPSTREAM_CONF, conf_text, mode=0o644)`.
+  - [x] `src/macblock/control.py:_atomic_write`:
+    - [x] Either replace implementation with `atomic_write_text(path, text, mode=0o644)`.
+    - [x] Or keep the current approach but make `chmod` failures visible (do not silently ignore at `src/macblock/control.py:91-92`), because silent permission drift defeats the point of the fix.
+- [x] Guardrail: ensure any callers that rely on reading these files without root remain able to do so (i.e., do not tighten to `0o600` unless you also adjust UX/docs).
 
 4) Tests (exact tests to add/adjust, what to assert, how to simulate without privilege)
-- Add unit tests that run on temp directories (no system paths):
-  - `save_state_atomic`:
-    - Write state to `tmp_path` file, then assert `(path.stat().st_mode & 0o777) == 0o644`.
-  - `_update_upstreams`:
-    - Patch `daemon.VAR_DB_UPSTREAM_CONF` to a `tmp_path` file (pattern exists at `tests/test_daemon.py:46-48`).
-    - Call `_update_upstreams(...)` and assert file mode is `0o644`.
-  - `_atomic_write`:
-    - Call it with a `tmp_path` file and assert mode is `0o644` and errors are not silently suppressed in failure simulations.
+- [x] Add unit tests that run on temp directories (no system paths):
+  - [x] `save_state_atomic`:
+    - [x] Write state to `tmp_path` file, then assert `(path.stat().st_mode & 0o777) == 0o644`.
+  - [x] `_update_upstreams`:
+    - [x] Patch `daemon.VAR_DB_UPSTREAM_CONF` to a `tmp_path` file (pattern exists at `tests/test_daemon.py:46-48`).
+    - [x] Call `_update_upstreams(...)` and assert file mode is `0o644`.
+  - [x] `_atomic_write`:
+    - [x] Call it with a `tmp_path` file and assert mode is `0o644` and errors are not silently suppressed in failure simulations.
 
 5) Risks & tradeoffs (compatibility, behavior change, rollout concerns)
 - Changing file permissions could affect users who intentionally rely on tighter permissions; however current behavior is already inconsistent due to umask. Pinning to `0o644` makes behavior predictable.
 - If privacy is a concern, treat “tighten permissions” as a separate, explicit decision with documentation updates (see “Security posture improvements” below).
 
 6) Acceptance criteria (what “done” looks like)
-- Files written via tmp+replace have predictable permissions (`0o644`) regardless of umask.
-- Tests validate the mode for the affected write sites.
+- [x] Files written via tmp+replace have predictable permissions (`0o644`) regardless of umask.
+- [x] Tests validate the mode for the affected write sites.
 
 ### Docs: Documentation accuracy + completeness
 
