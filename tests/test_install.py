@@ -1,5 +1,6 @@
 import errno
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -116,3 +117,157 @@ def test_remove_any_macblock_resolvers_removes_marked_files(tmp_path):
 
     assert keep.exists()
     assert not rm.exists()
+
+
+def test_do_uninstall_force_continues_when_unlink_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    monkeypatch.setattr(install, "Spinner", _DummySpinner)
+    monkeypatch.setattr(install, "_restore_dns_from_state", lambda _st: None)
+    monkeypatch.setattr(install, "_remove_any_macblock_resolvers", lambda: None)
+    monkeypatch.setattr(install, "bootout_system", lambda *_a, **_k: None)
+    monkeypatch.setattr(install, "service_exists", lambda _label: False)
+    monkeypatch.setattr(install, "delete_system_user", lambda _user: None)
+    monkeypatch.setattr(install, "result_success", lambda _msg: None)
+
+    st = install.State(
+        schema_version=2,
+        enabled=False,
+        resume_at_epoch=None,
+        blocklist_source=None,
+        dns_backup={},
+        managed_services=[],
+        resolver_domains=[],
+    )
+    monkeypatch.setattr(install, "load_state", lambda _p: st)
+
+    warnings: list[str] = []
+    monkeypatch.setattr(install, "step_warn", lambda msg: warnings.append(msg))
+
+    launchd_dir = tmp_path / "launchd"
+    launchd_dir.mkdir()
+    failing = launchd_dir / "dnsmasq.plist"
+    failing.write_text("test\n", encoding="utf-8")
+
+    monkeypatch.setattr(install, "LAUNCHD_DIR", launchd_dir)
+    monkeypatch.setattr(install, "LAUNCHD_DNSMASQ_PLIST", failing)
+    monkeypatch.setattr(install, "LAUNCHD_DAEMON_PLIST", launchd_dir / "daemon.plist")
+    monkeypatch.setattr(
+        install, "LAUNCHD_UPSTREAMS_PLIST", launchd_dir / "upstreams.plist"
+    )
+    monkeypatch.setattr(install, "LAUNCHD_STATE_PLIST", launchd_dir / "state.plist")
+
+    monkeypatch.setattr(install, "SYSTEM_SUPPORT_DIR", tmp_path / "support")
+    monkeypatch.setattr(install, "SYSTEM_CONFIG_DIR", tmp_path / "config")
+    monkeypatch.setattr(install, "SYSTEM_LOG_DIR", tmp_path / "logs")
+
+    monkeypatch.setattr(install, "VAR_DB_DIR", tmp_path / "var-db")
+    monkeypatch.setattr(install, "VAR_DB_DNSMASQ_DIR", tmp_path / "var-db-dnsmasq")
+    monkeypatch.setattr(install, "VAR_DB_UPSTREAM_CONF", tmp_path / "upstream.conf")
+    monkeypatch.setattr(install, "VAR_DB_DNSMASQ_PID", tmp_path / "dnsmasq.pid")
+    monkeypatch.setattr(install, "VAR_DB_DAEMON_PID", tmp_path / "daemon.pid")
+    monkeypatch.setattr(install, "VAR_DB_DAEMON_LAST_APPLY", tmp_path / "daemon.last")
+
+    monkeypatch.setattr(install, "SYSTEM_DNSMASQ_CONF", tmp_path / "dnsmasq.conf")
+    monkeypatch.setattr(
+        install, "SYSTEM_RAW_BLOCKLIST_FILE", tmp_path / "blocklist.raw"
+    )
+    monkeypatch.setattr(install, "SYSTEM_BLOCKLIST_FILE", tmp_path / "blocklist.conf")
+    monkeypatch.setattr(install, "SYSTEM_WHITELIST_FILE", tmp_path / "whitelist.txt")
+    monkeypatch.setattr(install, "SYSTEM_BLACKLIST_FILE", tmp_path / "blacklist.txt")
+    monkeypatch.setattr(install, "SYSTEM_STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(install, "SYSTEM_VERSION_FILE", tmp_path / "version")
+    monkeypatch.setattr(
+        install, "SYSTEM_DNS_EXCLUDE_SERVICES_FILE", tmp_path / "exclude"
+    )
+    monkeypatch.setattr(
+        install, "SYSTEM_UPSTREAM_FALLBACKS_FILE", tmp_path / "fallbacks"
+    )
+
+    original_unlink = Path.unlink
+
+    def _unlink(self: Path, *args, **kwargs):
+        if self == failing:
+            raise OSError("nope")
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", _unlink)
+
+    rc = install.do_uninstall(force=True)
+    assert rc == 0
+    assert any("Uninstall incomplete:" in w for w in warnings)
+    assert any(str(failing) in w for w in warnings)
+
+
+def test_do_uninstall_non_force_raises_on_unlink_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    monkeypatch.setattr(install, "Spinner", _DummySpinner)
+    monkeypatch.setattr(install, "_restore_dns_from_state", lambda _st: None)
+    monkeypatch.setattr(install, "_remove_any_macblock_resolvers", lambda: None)
+    monkeypatch.setattr(install, "bootout_system", lambda *_a, **_k: None)
+    monkeypatch.setattr(install, "service_exists", lambda _label: False)
+    monkeypatch.setattr(install, "result_success", lambda _msg: None)
+
+    st = install.State(
+        schema_version=2,
+        enabled=False,
+        resume_at_epoch=None,
+        blocklist_source=None,
+        dns_backup={},
+        managed_services=[],
+        resolver_domains=[],
+    )
+    monkeypatch.setattr(install, "load_state", lambda _p: st)
+
+    launchd_dir = tmp_path / "launchd"
+    launchd_dir.mkdir()
+    failing = launchd_dir / "dnsmasq.plist"
+    failing.write_text("test\n", encoding="utf-8")
+
+    monkeypatch.setattr(install, "LAUNCHD_DIR", launchd_dir)
+    monkeypatch.setattr(install, "LAUNCHD_DNSMASQ_PLIST", failing)
+    monkeypatch.setattr(install, "LAUNCHD_DAEMON_PLIST", launchd_dir / "daemon.plist")
+    monkeypatch.setattr(
+        install, "LAUNCHD_UPSTREAMS_PLIST", launchd_dir / "upstreams.plist"
+    )
+    monkeypatch.setattr(install, "LAUNCHD_STATE_PLIST", launchd_dir / "state.plist")
+
+    monkeypatch.setattr(install, "SYSTEM_SUPPORT_DIR", tmp_path / "support")
+    monkeypatch.setattr(install, "SYSTEM_CONFIG_DIR", tmp_path / "config")
+    monkeypatch.setattr(install, "SYSTEM_LOG_DIR", tmp_path / "logs")
+
+    monkeypatch.setattr(install, "VAR_DB_DIR", tmp_path / "var-db")
+    monkeypatch.setattr(install, "VAR_DB_DNSMASQ_DIR", tmp_path / "var-db-dnsmasq")
+    monkeypatch.setattr(install, "VAR_DB_UPSTREAM_CONF", tmp_path / "upstream.conf")
+    monkeypatch.setattr(install, "VAR_DB_DNSMASQ_PID", tmp_path / "dnsmasq.pid")
+    monkeypatch.setattr(install, "VAR_DB_DAEMON_PID", tmp_path / "daemon.pid")
+    monkeypatch.setattr(install, "VAR_DB_DAEMON_LAST_APPLY", tmp_path / "daemon.last")
+
+    monkeypatch.setattr(install, "SYSTEM_DNSMASQ_CONF", tmp_path / "dnsmasq.conf")
+    monkeypatch.setattr(
+        install, "SYSTEM_RAW_BLOCKLIST_FILE", tmp_path / "blocklist.raw"
+    )
+    monkeypatch.setattr(install, "SYSTEM_BLOCKLIST_FILE", tmp_path / "blocklist.conf")
+    monkeypatch.setattr(install, "SYSTEM_WHITELIST_FILE", tmp_path / "whitelist.txt")
+    monkeypatch.setattr(install, "SYSTEM_BLACKLIST_FILE", tmp_path / "blacklist.txt")
+    monkeypatch.setattr(install, "SYSTEM_STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(install, "SYSTEM_VERSION_FILE", tmp_path / "version")
+    monkeypatch.setattr(
+        install, "SYSTEM_DNS_EXCLUDE_SERVICES_FILE", tmp_path / "exclude"
+    )
+    monkeypatch.setattr(
+        install, "SYSTEM_UPSTREAM_FALLBACKS_FILE", tmp_path / "fallbacks"
+    )
+
+    original_unlink = Path.unlink
+
+    def _unlink(self: Path, *args, **kwargs):
+        if self == failing:
+            raise OSError("nope")
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", _unlink)
+
+    with pytest.raises(MacblockError, match="failed to remove"):
+        install.do_uninstall(force=False)

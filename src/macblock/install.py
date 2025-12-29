@@ -592,7 +592,23 @@ def do_uninstall(force: bool = False) -> int:
                 pass
         spinner.succeed("Services stopped")
 
+    file_leftovers: list[str] = []
+
     with Spinner("Removing files") as spinner:
+
+        def _unlink(p: Path) -> None:
+            if not p.exists():
+                return
+            try:
+                p.unlink()
+            except OSError as e:
+                if force:
+                    file_leftovers.append(f"file {p}: {e}")
+                    spinner.warn(f"Could not remove {p}: {e}")
+                else:
+                    spinner.fail(f"Could not remove {p}: {e}")
+                    raise MacblockError(f"failed to remove {p}: {e}") from e
+
         for p in [
             LAUNCHD_DNSMASQ_PLIST,
             LAUNCHD_DAEMON_PLIST,
@@ -600,16 +616,14 @@ def do_uninstall(force: bool = False) -> int:
             LAUNCHD_STATE_PLIST,
             old_pf_plist,
         ]:
-            if p.exists():
-                p.unlink()
+            _unlink(p)
 
         for p in [
             old_bin_dir / "apply-state.py",
             old_bin_dir / "update-upstreams.py",
             old_bin_dir / "macblockd.py",
         ]:
-            if p.exists():
-                p.unlink()
+            _unlink(p)
 
         for p in [
             VAR_DB_DNSMASQ_PID,
@@ -618,8 +632,7 @@ def do_uninstall(force: bool = False) -> int:
             VAR_DB_DAEMON_PID,
             VAR_DB_DAEMON_LAST_APPLY,
         ]:
-            if p.exists():
-                p.unlink()
+            _unlink(p)
 
         for d in [VAR_DB_DNSMASQ_DIR, VAR_DB_DIR]:
             if d.exists():
@@ -647,8 +660,7 @@ def do_uninstall(force: bool = False) -> int:
             SYSTEM_LOG_DIR / "state.out.log",
             SYSTEM_LOG_DIR / "state.err.log",
         ]:
-            if p.exists():
-                p.unlink()
+            _unlink(p)
 
         for d in [old_bin_dir, SYSTEM_CONFIG_DIR, SYSTEM_LOG_DIR, SYSTEM_SUPPORT_DIR]:
             if d.exists():
@@ -657,7 +669,10 @@ def do_uninstall(force: bool = False) -> int:
                 except Exception:
                     pass
 
-        spinner.succeed("Files removed")
+        if file_leftovers:
+            spinner.warn("File removal completed with leftovers")
+        else:
+            spinner.succeed("Files removed")
 
     if force:
         try:
@@ -675,6 +690,9 @@ def do_uninstall(force: bool = False) -> int:
     ]:
         if service_exists(label):
             leftovers.append(f"launchd {label}")
+
+    if file_leftovers:
+        leftovers.extend(file_leftovers)
 
     if leftovers:
         msg = "Uninstall incomplete: " + ", ".join(leftovers)
