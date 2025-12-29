@@ -230,16 +230,19 @@ def update_blocklist(source: str | None = None, sha256: str | None = None) -> in
     with Spinner("Compiling blocklist") as spinner:
         count_raw = len(_parse_hosts_domains(raw))
         if count_raw < 1000:
-            spinner.warn(f"Blocklist looks small ({count_raw} domains)")
-        else:
-            atomic_write_text(SYSTEM_RAW_BLOCKLIST_FILE, raw, mode=0o644)
-            count = compile_blocklist(
-                SYSTEM_RAW_BLOCKLIST_FILE,
-                SYSTEM_WHITELIST_FILE,
-                SYSTEM_BLACKLIST_FILE,
-                SYSTEM_BLOCKLIST_FILE,
+            spinner.fail(f"Blocklist looks too small ({count_raw} domains)")
+            raise MacblockError(
+                "downloaded blocklist looks too small; refusing to apply (try a different source)"
             )
-            spinner.succeed(f"Compiled {count:,} domains")
+
+        atomic_write_text(SYSTEM_RAW_BLOCKLIST_FILE, raw, mode=0o644)
+        count = compile_blocklist(
+            SYSTEM_RAW_BLOCKLIST_FILE,
+            SYSTEM_WHITELIST_FILE,
+            SYSTEM_BLACKLIST_FILE,
+            SYSTEM_BLOCKLIST_FILE,
+        )
+        spinner.succeed(f"Compiled {count:,} domains")
 
     # Save state
     save_state_atomic(
