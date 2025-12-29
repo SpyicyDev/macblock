@@ -106,7 +106,7 @@ def test_update_blocklist_rejects_html_download(
     assert calls == {"save": 0, "reload": 0, "write": 0}
 
 
-def test_update_blocklist_does_not_drift_state_on_download_error(
+def test_update_blocklist_does_not_drift_state_on_sha_mismatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(blocklists, "SYSTEM_STATE_FILE", tmp_path / "state.json")
@@ -116,8 +116,25 @@ def test_update_blocklist_does_not_drift_state_on_download_error(
 
     calls = {"save": 0, "reload": 0, "write": 0}
 
-    def _fake_download(url: str, *, expected_sha256: str | None = None) -> str:
-        raise MacblockError("sha mismatch")
+    class _FakeResponse:
+        def __init__(self, payload: bytes):
+            self._payload = payload
+            self._sent = False
+
+        def read(self, _n: int) -> bytes:
+            if self._sent:
+                return b""
+            self._sent = True
+            return self._payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def _fake_urlopen(_req, timeout: float = 30.0):
+        return _FakeResponse(b"0.0.0.0 ads.example\n")
 
     def _fake_atomic_write_text(path: Path, text: str, mode: int | None = None) -> None:
         calls["write"] += 1
@@ -128,12 +145,12 @@ def test_update_blocklist_does_not_drift_state_on_download_error(
     def _fake_reload_dnsmasq() -> None:
         calls["reload"] += 1
 
-    monkeypatch.setattr(blocklists, "_download", _fake_download)
+    monkeypatch.setattr(blocklists.urllib.request, "urlopen", _fake_urlopen)
     monkeypatch.setattr(blocklists, "atomic_write_text", _fake_atomic_write_text)
     monkeypatch.setattr(blocklists, "save_state_atomic", _fake_save_state_atomic)
     monkeypatch.setattr(blocklists, "reload_dnsmasq", _fake_reload_dnsmasq)
 
     with pytest.raises(MacblockError):
-        blocklists.update_blocklist()
+        blocklists.update_blocklist(sha256="0" * 64)
 
     assert calls == {"save": 0, "reload": 0, "write": 0}
