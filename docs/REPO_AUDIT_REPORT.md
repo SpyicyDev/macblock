@@ -101,28 +101,28 @@ This report covers:
 - Prevents hard crashes in CLI/daemon paths that call `run(...)` when a subprocess returns non-UTF8 output (robustness; “never crash on decode”).
 
 3) Implementation steps (ordered checklist, minimal diffs, guardrails)
-- Modify the success-path `subprocess.run(...)` call in `src/macblock/exec.py:16` to include:
-  - `encoding="utf-8"`
-  - `errors="replace"`
-- Keep the `RunResult` API unchanged (`stdout`/`stderr` remain `str`).
-- Guardrail: avoid changing timeout behavior (it already returns `returncode=124` and appends a timeout suffix at `src/macblock/exec.py:35`).
+- [x] Modify the success-path `subprocess.run(...)` call in `src/macblock/exec.py:16` to include:
+  - [x] `encoding="utf-8"`
+  - [x] `errors="replace"`
+- [x] Keep the `RunResult` API unchanged (`stdout`/`stderr` remain `str`).
+- [x] Guardrail: avoid changing timeout behavior (it already returns `returncode=124` and appends a timeout suffix at `src/macblock/exec.py:35`).
 
 4) Tests (exact tests to add/adjust, what to assert, how to simulate without privilege)
-- Add a focused unit test module (recommended: `tests/test_exec.py`) since `src/macblock/exec.py` currently has no direct tests (gap called out in `docs/REPO_AUDIT_REPORT.md:210`).
-- Use `unittest.mock.patch` or `monkeypatch` to avoid spawning real processes:
-  - Assert `subprocess.run` is invoked with `encoding="utf-8"` and `errors="replace"`.
-  - Simulate a `subprocess.TimeoutExpired` with `stdout`/`stderr` as bytes containing invalid UTF-8 and assert:
-    - `RunResult.returncode == 124`
-    - `stdout`/`stderr` contain the replacement character `�`
-    - `stderr` includes the timeout suffix from `src/macblock/exec.py:35`.
+- [x] Add a focused unit test module (recommended: `tests/test_exec.py`) since `src/macblock/exec.py` currently has no direct tests (gap called out in `docs/REPO_AUDIT_REPORT.md:210`).
+- [x] Use `unittest.mock.patch` or `monkeypatch` to avoid spawning real processes:
+  - [x] Assert `subprocess.run` is invoked with `encoding="utf-8"` and `errors="replace"`.
+  - [x] Simulate a `subprocess.TimeoutExpired` with `stdout`/`stderr` as bytes containing invalid UTF-8 and assert:
+    - [x] `RunResult.returncode == 124`
+    - [x] `stdout`/`stderr` contain the replacement character `�`
+    - [x] `stderr` includes the timeout suffix from `src/macblock/exec.py:35`.
 
 5) Risks & tradeoffs (compatibility, behavior change, rollout concerns)
 - Behavior change: undecodable bytes are now represented as `�` instead of crashing. This can slightly affect log/diagnostic output but is strongly preferable.
 - If any caller relies on a specific locale encoding, forcing UTF-8 may change rendered characters; mitigate by documenting that output is UTF-8 decoded with replacement.
 
 6) Acceptance criteria (what “done” looks like)
-- `macblock.exec.run(...)` never raises `UnicodeDecodeError` due to subprocess output.
-- New unit tests cover both normal and timeout decode paths.
+- [x] `macblock.exec.run(...)` never raises `UnicodeDecodeError` due to subprocess output.
+- [x] New unit tests cover both normal and timeout decode paths.
 
 ### C. Corrupt `state.json` can break CLI + daemon loops
 
@@ -458,24 +458,24 @@ Design B (alternative): exponential backoff + persistent “failed” marker sur
 - Marker files are consumed by `status` and by stale-daemon detection (`src/macblock/daemon.py:_check_stale_daemon` at `src/macblock/daemon.py:564-579`). Partial/truncated writes can create confusing “daemon running but markers unreadable” states.
 
 3) Implementation steps (ordered checklist, minimal diffs, guardrails)
-- In `src/macblock/daemon.py`:
-  - Import `atomic_write_text` from `macblock.fs`.
-  - Replace each `write_text(...)` call in `_write_last_apply_file`, `_write_pid_file`, `_write_ready_file` with `atomic_write_text(path, text, mode=0o644)`.
-  - Guardrail: keep the trailing newline and parent directory creation. `atomic_write_text` already creates the parent dir (`src/macblock/fs.py:8`).
+- [x] In `src/macblock/daemon.py`:
+  - [x] Import `atomic_write_text` from `macblock.fs`.
+  - [x] Replace each `write_text(...)` call in `_write_last_apply_file`, `_write_pid_file`, `_write_ready_file` with `atomic_write_text(path, text, mode=0o644)`.
+  - [x] Guardrail: keep the trailing newline and parent directory creation. `atomic_write_text` already creates the parent dir (`src/macblock/fs.py:8`).
 
 4) Tests (exact tests to add/adjust, what to assert, how to simulate without privilege)
-- Add unit tests to `tests/test_daemon.py`:
-  - Patch `daemon.VAR_DB_DAEMON_PID`, `daemon.VAR_DB_DAEMON_READY`, `daemon.VAR_DB_DAEMON_LAST_APPLY` to temp paths (pattern exists for other files at `tests/test_daemon.py:46-48`).
-  - Monkeypatch `daemon.atomic_write_text` to capture calls and assert `mode=0o644`.
-  - Assert written contents are parseable ints (PID/timestamps).
+- [x] Add unit tests to `tests/test_daemon.py`:
+  - [x] Patch `daemon.VAR_DB_DAEMON_PID`, `daemon.VAR_DB_DAEMON_READY`, `daemon.VAR_DB_DAEMON_LAST_APPLY` to temp paths (pattern exists for other files at `tests/test_daemon.py:46-48`).
+  - [x] Monkeypatch `daemon.atomic_write_text` to capture calls and assert `mode=0o644`.
+  - [x] Assert written contents are parseable ints (PID/timestamps).
 
 5) Risks & tradeoffs (compatibility, behavior change, rollout concerns)
 - Very low risk; this is purely a robustness improvement.
 - Slight behavior change: file permissions become consistent (`0o644`) instead of umask-dependent (ties into Finding K).
 
 6) Acceptance criteria (what “done” looks like)
-- Marker files are written atomically and remain parseable.
-- `macblock status` and stale-daemon detection never break due to partially-written marker files.
+- [x] Marker files are written atomically and remain parseable.
+- [x] `macblock status` and stale-daemon detection never break due to partially-written marker files.
 
 ### K. Some atomic writes do not pin file permissions
 
