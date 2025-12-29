@@ -184,12 +184,12 @@ This report covers:
 - Preserving an arbitrary user environment across privilege escalation broadens the attack surface and can change privileged behavior via app-specific variables (even if OS strips some `LD_*` / `DYLD_*` vars).
 
 3) Implementation steps (ordered checklist, minimal diffs, guardrails)
-- Recommended minimal-diff remediation: **remove `-E`** and avoid blanket env preservation.
+- [x] Recommended minimal-diff remediation: **remove `-E`** and avoid blanket env preservation.
   - In `src/macblock/cli.py:_exec_sudo` (`src/macblock/cli.py:102`):
-    - Keep setting `MACBLOCK_ELEVATED` in the parent env to prevent recursion checks (`src/macblock/cli.py:107-112`).
-    - Remove the `-E` flag from both execve invocations (`src/macblock/cli.py:115` and `src/macblock/cli.py:117`).
-    - Consider tightening the env passed to `sudo` itself: build a minimal env dict (e.g., `TERM`, `LANG`, `LC_*`, plus `MACBLOCK_ELEVATED`) instead of `dict(os.environ)`.
-  - Guardrail: explicitly drop `MACBLOCK_BIN` and `MACBLOCK_DNSMASQ_BIN` from the env passed into the escalation path to prevent them influencing privileged codepaths.
+    - [x] Keep setting `MACBLOCK_ELEVATED` in the parent env to prevent recursion checks (`src/macblock/cli.py:107-112`).
+    - [x] Remove the `-E` flag from both execve invocations (`src/macblock/cli.py:115` and `src/macblock/cli.py:117`).
+    - [x] Build a minimal env dict for `sudo` (e.g., `TERM`, `LANG`, `LC_*`, plus `MACBLOCK_ELEVATED`) instead of `dict(os.environ)`.
+  - [x] Guardrail: explicitly drop `MACBLOCK_BIN` and `MACBLOCK_DNSMASQ_BIN` from the env passed into the escalation path to prevent them influencing privileged codepaths.
 - Developer ergonomics mitigation (do not weaken default security):
   - `.envrc` sets `PYTHONPATH="$PWD/src"` for local dev (`.envrc:17`). Without preserve-env, elevated commands may run the installed package instead of the working tree.
   - Recommended: document a dev-only workflow that does not require `sudo -E` by default:
@@ -197,23 +197,23 @@ This report covers:
     - Provide a documented sudoers allowlist approach (`Defaults env_keep += "PYTHONPATH"`) for developers who understand the tradeoff.
 
 4) Tests (exact tests to add/adjust, what to assert, how to simulate without privilege)
-- Add unit tests around `_exec_sudo` in `tests/test_cli.py` by monkeypatching:
+- [x] Add unit tests around `_exec_sudo` in `tests/test_cli.py` by monkeypatching:
   - `shutil.which` to return a fake sudo path and fake executable path.
   - `os.execve` to capture arguments instead of exec’ing.
-- Assert:
-  - No `-E` is present in the constructed argv.
-  - The env dict passed to `os.execve` does not include `MACBLOCK_BIN` / `MACBLOCK_DNSMASQ_BIN`.
-  - The env dict sets `MACBLOCK_ELEVATED=1`.
-- Guardrail test: if `MACBLOCK_ELEVATED=1` already, `_exec_sudo` raises `PrivilegeError` (`src/macblock/cli.py:107-109`).
+- [x] Assert:
+  - [x] No `-E` is present in the constructed argv.
+  - [x] The env dict passed to `os.execve` does not include `MACBLOCK_BIN` / `MACBLOCK_DNSMASQ_BIN`.
+  - [x] The env dict sets `MACBLOCK_ELEVATED=1`.
+- [x] Guardrail test: if `MACBLOCK_ELEVATED=1` already, `_exec_sudo` raises `PrivilegeError` (`src/macblock/cli.py:107-109`).
 
 5) Risks & tradeoffs (compatibility, behavior change, rollout concerns)
 - Removing preserve-env can change which code is executed in dev setups (working tree vs installed version). Mitigate via docs and/or explicit developer configuration.
 - If users rely on `MACBLOCK_BIN`/`MACBLOCK_DNSMASQ_BIN` in production, dropping these vars could change behavior; treat as a deliberate security hardening and document it.
 
 6) Acceptance criteria (what “done” looks like)
-- Auto-elevation no longer uses blanket environment preservation.
-- Privileged codepaths cannot be influenced by `MACBLOCK_BIN` / `MACBLOCK_DNSMASQ_BIN` unless explicitly intended.
-- CLI tests validate argv/env construction for `_exec_sudo`.
+- [x] Auto-elevation no longer uses blanket environment preservation.
+- [x] Privileged codepaths cannot be influenced by `MACBLOCK_BIN` / `MACBLOCK_DNSMASQ_BIN` unless explicitly intended.
+- [x] CLI tests validate argv/env construction for `_exec_sudo`.
 
 External support
 - `sudoers(5)` warns that `-E/--preserve-env` bypasses env restrictions and “only trusted users should be allowed to set variables in this manner”: https://www.sudo.ws/docs/man/sudoers.man/
@@ -228,32 +228,32 @@ External support
 - `uninstall --force` should be resilient: it should continue cleanup, accumulate failures, and report what could not be removed so users can finish manually.
 
 3) Implementation steps (ordered checklist, minimal diffs, guardrails)
-- In `src/macblock/install.py:do_uninstall`:
-  - Introduce an accumulator (e.g., `file_leftovers: list[str] = []`) before the “Removing files” spinner.
-  - For each `if p.exists(): p.unlink()` site in that spinner (`src/macblock/install.py:596-652`):
-    - Wrap `p.unlink()` in `try/except OSError as e`.
-    - If `force` is true: append a descriptive entry to `file_leftovers` (include path + error) and continue; optionally `spinner.warn(...)` once per category.
-    - If `force` is false: call `spinner.fail(...)` and raise `MacblockError` to preserve current strictness.
+- [x] In `src/macblock/install.py:do_uninstall`:
+  - [x] Introduce an accumulator (e.g., `file_leftovers: list[str] = []`) before the “Removing files” spinner.
+  - [x] For each `if p.exists(): p.unlink()` site in that spinner (`src/macblock/install.py:596-652`):
+    - [x] Wrap `p.unlink()` in `try/except OSError as e`.
+    - [x] If `force` is true: append a descriptive entry to `file_leftovers` (include path + error) and continue; optionally `spinner.warn(...)` once per category.
+    - [x] If `force` is false: call `spinner.fail(...)` and raise `MacblockError` to preserve current strictness.
   - Keep directory removals best-effort as currently implemented (they already `try/except` around `rmdir()` at `src/macblock/install.py:624-629` and `src/macblock/install.py:654-658`).
-  - Merge leftover reporting:
-    - At the end, the report currently only checks remaining launchd services (`leftovers` list at `src/macblock/install.py:668-678`). Extend the final message to include `file_leftovers` as well.
+  - [x] Merge leftover reporting:
+    - [x] At the end, the report currently only checks remaining launchd services (`leftovers` list at `src/macblock/install.py:668-678`). Extend the final message to include `file_leftovers` as well.
 
 4) Tests (exact tests to add/adjust, what to assert, how to simulate without privilege)
-- Extend `tests/test_install.py` with a new test that exercises best-effort behavior:
-  - Use `tmp_path` to create fake plist/files and monkeypatch module-level path constants in `macblock.install` (this file already monkeypatches `install.SYSTEM_RESOLVER_DIR` at `tests/test_install.py:113`).
-  - Monkeypatch `Path.unlink` (or better: monkeypatch specific paths’ `.unlink` via small wrappers) to raise `OSError` for selected files.
-  - Call `do_uninstall(force=True)` and assert it returns `0` and does not raise.
-  - Call `do_uninstall(force=False)` with the same failures and assert it raises `MacblockError`.
-  - Use `capsys` to assert the output includes a clear “Uninstall incomplete” message when leftovers remain.
+- [x] Extend `tests/test_install.py` with a new test that exercises best-effort behavior:
+  - [x] Use `tmp_path` to create fake plist/files and monkeypatch module-level path constants in `macblock.install` (this file already monkeypatches `install.SYSTEM_RESOLVER_DIR` at `tests/test_install.py:113`).
+  - [x] Monkeypatch `Path.unlink` (or better: monkeypatch specific paths’ `.unlink` via small wrappers) to raise `OSError` for selected files.
+  - [x] Call `do_uninstall(force=True)` and assert it returns `0` and does not raise.
+  - [x] Call `do_uninstall(force=False)` with the same failures and assert it raises `MacblockError`.
+  - [x] Capture output (via `capsys` or by intercepting `step_warn`) to assert a clear “Uninstall incomplete” message when leftovers remain.
 
 5) Risks & tradeoffs (compatibility, behavior change, rollout concerns)
 - In `--force` mode, uninstall will succeed more often but may leave files behind; this is expected and should be clearly reported.
 - Be careful not to hide genuinely dangerous partial states: the final output must list exactly what remains.
 
 6) Acceptance criteria (what “done” looks like)
-- `macblock uninstall --force` completes even if individual file deletions fail.
-- The final output lists leftover services and leftover files with enough detail to remediate manually.
-- Unit tests cover both force and non-force behavior.
+- [x] `macblock uninstall --force` completes even if individual file deletions fail.
+- [x] The final output lists leftover services and leftover files with enough detail to remediate manually.
+- [x] Unit tests cover both force and non-force behavior.
 
 ### F. Allow/deny list management can be bricked by a single bad line
 
