@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import sys
 import urllib.request
 from pathlib import Path
 
@@ -89,8 +90,37 @@ def compile_blocklist(
     raw = raw_path.read_text(encoding="utf-8") if raw_path.exists() else ""
     base = _parse_hosts_domains(raw)
 
-    allow = {normalize_domain(x) for x in _read_lines(whitelist_path)}
-    deny = {normalize_domain(x) for x in _read_lines(blacklist_path)}
+    allow: set[str] = set()
+    if whitelist_path.exists():
+        for i, line in enumerate(
+            whitelist_path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            try:
+                allow.add(normalize_domain(s))
+            except MacblockError:
+                print(
+                    f"warning: invalid domain in {whitelist_path.name}:{i}: {s}",
+                    file=sys.stderr,
+                )
+
+    deny: set[str] = set()
+    if blacklist_path.exists():
+        for i, line in enumerate(
+            blacklist_path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            try:
+                deny.add(normalize_domain(s))
+            except MacblockError:
+                print(
+                    f"warning: invalid domain in {blacklist_path.name}:{i}: {s}",
+                    file=sys.stderr,
+                )
 
     final = (base - allow) | deny
 

@@ -14,8 +14,8 @@ def test_compile_applies_allow_and_deny(tmp_path: Path):
     out = tmp_path / "out"
 
     raw.write_text("0.0.0.0 ads.example\n0.0.0.0 tracker.example\n", encoding="utf-8")
-    allow.write_text("ads.example\n", encoding="utf-8")
-    deny.write_text("extra.example\n", encoding="utf-8")
+    allow.write_text("invalid@@\nads.example\n", encoding="utf-8")
+    deny.write_text("extra.example\ninvalid@@\n", encoding="utf-8")
 
     count = compile_blocklist(raw, allow, deny, out)
     assert count == 2
