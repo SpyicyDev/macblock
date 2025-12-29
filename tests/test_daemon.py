@@ -339,6 +339,56 @@ def test_wait_for_network_ready_ipv6_only(monkeypatch: pytest.MonkeyPatch):
     assert clock.now >= 1.0
 
 
+def test_run_daemon_exits_after_consecutive_failures(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(daemon, "VAR_DB_DAEMON_PID", tmp_path / "daemon.pid")
+    monkeypatch.setattr(daemon, "VAR_DB_DAEMON_READY", tmp_path / "daemon.ready")
+    monkeypatch.setattr(
+        daemon, "VAR_DB_DAEMON_LAST_APPLY", tmp_path / "daemon.last_apply"
+    )
+    monkeypatch.setattr(daemon, "SYSTEM_STATE_FILE", tmp_path / "state.json")
+
+    monkeypatch.setattr(daemon, "_check_stale_daemon", lambda: False)
+    monkeypatch.setattr(
+        daemon, "_should_wait_for_network_before_apply", lambda _st: False
+    )
+    monkeypatch.setattr(daemon, "_wait_for_network_ready", lambda _t: False)
+
+    monkeypatch.setattr(daemon.signal, "signal", lambda *_a, **_k: None)
+
+    st = State(
+        schema_version=2,
+        enabled=False,
+        resume_at_epoch=None,
+        blocklist_source=None,
+        dns_backup={},
+        managed_services=[],
+        resolver_domains=[],
+    )
+    monkeypatch.setattr(daemon, "load_state", lambda _p: st)
+
+    apply_calls = {"count": 0}
+
+    def _apply_state(*, reason: str = "unknown") -> tuple[bool, list[str]]:
+        apply_calls["count"] += 1
+        return False, ["issue"]
+
+    monkeypatch.setattr(daemon, "_apply_state", _apply_state)
+
+    monkeypatch.setattr(daemon, "_seconds_until_resume", lambda _st: 0.0)
+    monkeypatch.setattr(
+        daemon, "_wait_for_network_change_or_signal", lambda _t: ("timeout", 0)
+    )
+
+    daemon._shutdown_requested = False
+    daemon._trigger_apply = False
+
+    rc = daemon.run_daemon()
+    assert rc == 1
+    assert apply_calls["count"] == 5
+
+
 def test_wait_for_network_ready_times_out(monkeypatch: pytest.MonkeyPatch):
     clock = _FakeClock()
     monkeypatch.setattr(daemon.time, "time", clock.time)

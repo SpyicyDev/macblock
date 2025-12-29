@@ -632,9 +632,9 @@ def run_daemon() -> int:
 
                     if consecutive_failures >= max_consecutive_failures:
                         _log(
-                            f"too many consecutive failures ({consecutive_failures}), continuing anyway"
+                            f"too many consecutive failures ({consecutive_failures}), exiting to let launchd restart"
                         )
-                        consecutive_failures = 0
+                        return 1
 
             except Exception as e:
                 consecutive_failures += 1
@@ -642,9 +642,9 @@ def run_daemon() -> int:
 
                 if consecutive_failures >= max_consecutive_failures:
                     _log(
-                        f"too many consecutive failures ({consecutive_failures}), continuing anyway"
+                        f"too many consecutive failures ({consecutive_failures}), exiting to let launchd restart"
                     )
-                    consecutive_failures = 0
+                    return 1
 
             if _shutdown_requested:
                 break
