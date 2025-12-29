@@ -136,17 +136,17 @@ This report covers:
 - A partially-written file, manual edits, or corruption can “brick” both unprivileged commands (e.g., `status`) and daemon reconciliation until repaired.
 
 3) Implementation steps (ordered checklist, minimal diffs, guardrails)
-- Pick a stance. Recommended default: **fail-with-guidance** (do not silently reset), because state can contain critical DNS backup/managed-service data.
-- In `src/macblock/state.py:load_state`:
-  - Wrap `path.read_text(...)` and `json.loads(...)` (`src/macblock/state.py:50`) in `try/except`.
-    - Catch at least: `OSError`, `UnicodeDecodeError`, and `json.JSONDecodeError`.
-    - Raise `MacblockError` with actionable remediation (e.g., “state.json is corrupt; delete it to reset to defaults”).
-  - After parsing, validate `isinstance(data, dict)`; if not, raise `MacblockError` (“state.json must be an object”).
-  - Guard the `schema_version` coercion at `src/macblock/state.py:98`:
-    - If it cannot be coerced to an int, raise `MacblockError` with remediation.
-    - Keep the existing “schema mismatch” warning behavior (`src/macblock/state.py:100`) for valid ints that don’t match.
-- Ensure CLI behavior remains clean:
-  - No changes required for exit codes; `MacblockError` is already caught and printed as `error: ...` (`src/macblock/cli.py:58-60`).
+- [x] Pick a stance. Recommended default: **fail-with-guidance** (do not silently reset), because state can contain critical DNS backup/managed-service data.
+- [x] In `src/macblock/state.py:load_state`:
+  - [x] Wrap `path.read_text(...)` and `json.loads(...)` (`src/macblock/state.py:50`) in `try/except`.
+    - [x] Catch at least: `OSError`, `UnicodeDecodeError`, and `json.JSONDecodeError`.
+    - [x] Raise `MacblockError` with actionable remediation (e.g., “state.json is corrupt; delete it to reset to defaults”).
+  - [x] After parsing, validate `isinstance(data, dict)`; if not, raise `MacblockError` (“state.json must be an object”).
+  - [x] Guard the `schema_version` coercion at `src/macblock/state.py:98`:
+    - [x] If it cannot be coerced to an int, raise `MacblockError` with remediation.
+    - [x] Keep the existing “schema mismatch” warning behavior (`src/macblock/state.py:100`) for valid ints that don’t match.
+- [x] Ensure CLI behavior remains clean:
+  - [x] No changes required for exit codes; `MacblockError` is already caught and printed as `error: ...` (`src/macblock/cli.py:58-60`).
 - Call-site behavior expectations (interaction review):
   - `macblock status` loads state immediately (`src/macblock/status.py:76`). Decide whether to:
     - (A) let `MacblockError` propagate (clean `error: ...`, exit code 1), or
@@ -155,12 +155,12 @@ This report covers:
   - `macblock daemon` loads state repeatedly (`src/macblock/daemon.py:605` and `src/macblock/daemon.py:641`). If `load_state` raises `MacblockError`, recommend exiting the daemon (Design A from Finding I) so launchd restart + logs make the failure visible instead of looping silently.
 
 4) Tests (exact tests to add/adjust, what to assert, how to simulate without privilege)
-- Add a dedicated unit test module (recommended: `tests/test_state.py`) to test `load_state` directly with `tmp_path` (no `/Library` usage).
-- Suggested cases:
-  - Invalid JSON content: write `{ invalid` to a temp file; assert `load_state(...)` raises `MacblockError` and message contains “corrupt”/“invalid JSON”.
-  - Valid JSON but wrong top-level type (`[]` or `"str"`): assert `MacblockError`.
-  - Valid JSON with invalid `schema_version` type (e.g., `"two"`): assert `MacblockError`.
-  - Nonexistent file: assert current default return behavior still works (`src/macblock/state.py:39`).
+- [x] Add a dedicated unit test module (recommended: `tests/test_state.py`) to test `load_state` directly with `tmp_path` (no `/Library` usage).
+- [x] Suggested cases:
+  - [x] Invalid JSON content: write `{ invalid` to a temp file; assert `load_state(...)` raises `MacblockError` and message contains “corrupt”/“invalid JSON”.
+  - [x] Valid JSON but wrong top-level type (`[]` or `"str"`): assert `MacblockError`.
+  - [x] Valid JSON with invalid `schema_version` type (e.g., `"two"`): assert `MacblockError`.
+  - [x] Nonexistent file: assert current default return behavior still works (`src/macblock/state.py:39`).
 - For daemon-level behavior, add/adjust tests in `tests/test_daemon.py` to simulate `load_state` raising `MacblockError` and assert the daemon either exits or surfaces a “failed” state (depending on the approach chosen in Finding I).
 
 5) Risks & tradeoffs (compatibility, behavior change, rollout concerns)
@@ -168,9 +168,9 @@ This report covers:
 - Reset-to-defaults would improve resilience but risks losing DNS backup data and causing unexpected DNS state changes; only use if you explicitly add clear warnings and/or backup rotation.
 
 6) Acceptance criteria (what “done” looks like)
-- Corrupt `state.json` produces a clean `error: ...` with clear remediation steps (no tracebacks).
-- No command/daemon crashes from JSON/type errors.
-- Tests cover invalid JSON and wrong-type scenarios.
+- [x] Corrupt `state.json` produces a clean `error: ...` with clear remediation steps (no tracebacks).
+- [x] No command/daemon crashes from JSON/type errors.
+- [x] Tests cover invalid JSON and wrong-type scenarios.
 
 ### D. `sudo -E` environment preservation is a security footgun
 
@@ -269,42 +269,42 @@ External support
 - Non-atomic writes risk truncated/empty files on crashes, which is exactly the scenario that makes later reads brittle.
 
 3) Implementation steps (ordered checklist, minimal diffs, guardrails)
-- Make reads tolerant:
-  - Introduce a helper in `src/macblock/lists.py` (e.g., `_read_domains_tolerant(path: Path) -> set[str]`) that:
-    - Iterates `_read_set(path)` output or directly reads the file.
-    - For each line, calls `normalize_domain(line)` and catches `MacblockError`.
-    - On invalid line, prints a warning to stderr with the line number and a remediation hint (“remove/repair the line in whitelist.txt/blacklist.txt”).
-    - Continues processing remaining lines.
-  - Replace the brittle comprehensions in `add_*`, `remove_*`, and `list_*` (`src/macblock/lists.py:47-98`) with this tolerant helper.
-- Make writes atomic:
-  - Replace `_write_set` implementation (`src/macblock/lists.py:28-31`) with `atomic_write_text(path, content, mode=0o644)` from `src/macblock/fs.py:7`.
-  - Guardrail: ensure parent dir creation remains (`path.parent.mkdir(...)`) which `atomic_write_text` already handles (`src/macblock/fs.py:8`).
-- UX guardrails:
-  - `list_whitelist` / `list_blacklist` should still exit `0` even if invalid lines exist; warnings should be visible on stderr.
-  - `add_*` / `remove_*` should still function if the file contains unrelated invalid lines (skip+warn).
-- Interaction with compilation/reload (avoid re-bricking via `_recompile`):
-  - `src/macblock/lists.py:_recompile` invokes `compile_blocklist(...)` and will currently crash if the allow/deny files contain a bad line, because `src/macblock/blocklists.py:compile_blocklist` uses set comprehensions calling `normalize_domain(...)` on `_read_lines(...)` output (`src/macblock/blocklists.py:92-93`).
-  - Make compilation tolerant too: replace those comprehensions with a tolerant loop that catches `MacblockError` and skips invalid entries (with a warning that includes which file had the bad line). This keeps `allow add/remove` usable even when a user previously wrote a malformed line.
+- [x] Make reads tolerant:
+  - [x] Introduce a helper in `src/macblock/lists.py` (e.g., `_read_domains_tolerant(path: Path) -> set[str]`) that:
+    - [x] Iterates `_read_set(path)` output or directly reads the file.
+    - [x] For each line, calls `normalize_domain(line)` and catches `MacblockError`.
+    - [x] On invalid line, prints a warning to stderr with the line number and a remediation hint (“remove/repair the line in whitelist.txt/blacklist.txt”).
+    - [x] Continues processing remaining lines.
+  - [x] Replace the brittle comprehensions in `add_*`, `remove_*`, and `list_*` (`src/macblock/lists.py:47-98`) with this tolerant helper.
+- [x] Make writes atomic:
+  - [x] Replace `_write_set` implementation (`src/macblock/lists.py:28-31`) with `atomic_write_text(path, content, mode=0o644)` from `src/macblock/fs.py:7`.
+  - [x] Guardrail: ensure parent dir creation remains (`path.parent.mkdir(...)`) which `atomic_write_text` already handles (`src/macblock/fs.py:8`).
+- [x] UX guardrails:
+  - [x] `list_whitelist` / `list_blacklist` should still exit `0` even if invalid lines exist; warnings should be visible on stderr.
+  - [x] `add_*` / `remove_*` should still function if the file contains unrelated invalid lines (skip+warn).
+- [x] Interaction with compilation/reload (avoid re-bricking via `_recompile`):
+  - [x] `src/macblock/lists.py:_recompile` invokes `compile_blocklist(...)` and will currently crash if the allow/deny files contain a bad line, because `src/macblock/blocklists.py:compile_blocklist` uses set comprehensions calling `normalize_domain(...)` on `_read_lines(...)` output (`src/macblock/blocklists.py:92-93`).
+  - [x] Make compilation tolerant too: replace those comprehensions with a tolerant loop that catches `MacblockError` and skips invalid entries (with a warning that includes which file had the bad line). This keeps `allow add/remove` usable even when a user previously wrote a malformed line.
 
 4) Tests (exact tests to add/adjust, what to assert, how to simulate without privilege)
-- Add a focused unit test module (recommended: `tests/test_lists.py`), since there are currently no list-file tests.
-- Use `tmp_path` and monkeypatch module-level constants in `macblock.lists`:
-  - Patch `SYSTEM_WHITELIST_FILE` / `SYSTEM_BLACKLIST_FILE` to point at `tmp_path` files.
-  - Patch `_recompile` to a no-op to avoid dependency on `SYSTEM_RAW_BLOCKLIST_FILE` (which would otherwise raise at `src/macblock/lists.py:35-36`).
-- Suggested cases:
-  - `list_whitelist` on a file containing valid + invalid domains prints valid domains and does not raise.
-  - `add_whitelist` with an existing invalid line still adds the requested domain and writes back a normalized/clean set.
-  - `_write_set` writes a trailing newline and does not partially truncate on simulated failure (unit test can at least assert writes go through `atomic_write_text`, by monkeypatching `macblock.lists.atomic_write_text`).
-  - Compilation tolerance: with an invalid line present in whitelist/blacklist, `_recompile` should not raise; it should compile using only valid entries and emit a warning pointing at the offending file.
+- [x] Add a focused unit test module (recommended: `tests/test_lists.py`), since there are currently no list-file tests.
+- [x] Use `tmp_path` and monkeypatch module-level constants in `macblock.lists`:
+  - [x] Patch `SYSTEM_WHITELIST_FILE` / `SYSTEM_BLACKLIST_FILE` to point at `tmp_path` files.
+  - [x] Patch `_recompile` to a no-op to avoid dependency on `SYSTEM_RAW_BLOCKLIST_FILE` (which would otherwise raise at `src/macblock/lists.py:35-36`).
+- [x] Suggested cases:
+  - [x] `list_whitelist` on a file containing valid + invalid domains prints valid domains and does not raise.
+  - [x] `add_whitelist` with an existing invalid line still adds the requested domain and writes back a normalized/clean set.
+  - [x] `_write_set` writes a trailing newline and does not partially truncate on simulated failure (unit test can at least assert writes go through `atomic_write_text`, by monkeypatching `macblock.lists.atomic_write_text`).
+  - [x] Compilation tolerance: with an invalid line present in whitelist/blacklist, `_recompile` should not raise; it should compile using only valid entries and emit a warning pointing at the offending file.
 
 5) Risks & tradeoffs (compatibility, behavior change, rollout concerns)
 - Behavior change: previously, invalid stored lines caused hard failures; now they produce warnings and are ignored. This is almost always an improvement, but it can mask typos unless warnings are prominent.
 - Decide whether to “auto-repair” files (rewrite without invalid lines) or only warn+skip. Auto-repair can surprise users; warn+skip is safer.
 
 6) Acceptance criteria (what “done” looks like)
-- `macblock allow list` / `macblock deny list` never crash due to a single malformed line.
-- Writes to list files are atomic and permissions are consistent (`0o644`).
-- New unit tests cover invalid-line tolerance.
+- [x] `macblock allow list` / `macblock deny list` never crash due to a single malformed line.
+- [x] Writes to list files are atomic and permissions are consistent (`0o644`).
+- [x] New unit tests cover invalid-line tolerance.
 
 ### G. IPv4-only "network ready" heuristic
 
