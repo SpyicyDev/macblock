@@ -107,14 +107,18 @@ def _exec_sudo(argv: list[str]) -> None:
     if os.environ.get("MACBLOCK_ELEVATED") == "1":
         raise PrivilegeError("failed to elevate privileges")
 
-    env = dict(os.environ)
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k in {"PATH", "TERM", "LANG"} or k.startswith("LC_")
+    }
     env["MACBLOCK_ELEVATED"] = "1"
 
     exe = shutil.which(sys.argv[0])
     if exe:
-        os.execve(sudo, [sudo, "-E", exe, *argv], env)
+        os.execve(sudo, [sudo, exe, *argv], env)
 
-    os.execve(sudo, [sudo, "-E", sys.executable, "-m", "macblock", *argv], env)
+    os.execve(sudo, [sudo, sys.executable, "-m", "macblock", *argv], env)
 
 
 def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
