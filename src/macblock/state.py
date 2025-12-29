@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from macblock.fs import atomic_write_text
+
 # Schema version for state.json - increment when making breaking changes.
 # Both CLI (state.py) and daemon (macblockd.py.tmpl) must agree on this.
 CURRENT_SCHEMA_VERSION = 2
@@ -128,8 +130,6 @@ def replace_state(st: State, **updates: Any) -> State:
 
 
 def save_state_atomic(path: Path, state: State) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-
     payload: dict[str, Any] = {
         "schema_version": state.schema_version,
         "enabled": state.enabled,
@@ -139,8 +139,8 @@ def save_state_atomic(path: Path, state: State) -> None:
         "managed_services": state.managed_services,
     }
 
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    atomic_write_text(
+        path,
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        mode=0o644,
     )
-    tmp.replace(path)

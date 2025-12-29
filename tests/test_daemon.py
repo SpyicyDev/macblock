@@ -106,6 +106,8 @@ def test_update_upstreams_writes_defaults_and_per_domain(
     assert "server=/corp.example/10.0.0.1\n" in text
     assert "127.0.0.1" not in text
 
+    assert (upstream_conf.stat().st_mode & 0o777) == 0o644
+
 
 def test_apply_state_enables_blocking_and_persists_state(
     tmp_path, monkeypatch: pytest.MonkeyPatch

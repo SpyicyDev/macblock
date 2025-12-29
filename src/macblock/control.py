@@ -14,6 +14,7 @@ from macblock.constants import (
     VAR_DB_DAEMON_READY,
 )
 from macblock.errors import MacblockError
+from macblock.fs import atomic_write_text
 from macblock.launchd import kickstart
 from macblock.state import load_state, replace_state, save_state_atomic
 from macblock.resolvers import (
@@ -282,14 +283,7 @@ def do_resume() -> int:
 
 
 def _atomic_write(path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
-    try:
-        path.chmod(0o644)
-    except Exception:
-        pass
+    atomic_write_text(path, text, mode=0o644)
 
 
 def do_upstreams_list() -> int:

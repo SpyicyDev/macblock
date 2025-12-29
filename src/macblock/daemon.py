@@ -278,10 +278,7 @@ def _update_upstreams(state: State) -> bool:
     except Exception:
         pass
 
-    VAR_DB_UPSTREAM_CONF.parent.mkdir(parents=True, exist_ok=True)
-    tmp = VAR_DB_UPSTREAM_CONF.with_suffix(".tmp")
-    tmp.write_text(conf_text, encoding="utf-8")
-    tmp.replace(VAR_DB_UPSTREAM_CONF)
+    atomic_write_text(VAR_DB_UPSTREAM_CONF, conf_text, mode=0o644)
     return True
 
 
