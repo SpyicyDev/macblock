@@ -22,6 +22,7 @@ from macblock.constants import (
     VAR_DB_UPSTREAM_CONF,
 )
 from macblock.exec import run
+from macblock.fs import atomic_write_text
 from macblock.resolvers import read_fallback_upstreams, read_system_resolvers
 from macblock.state import load_state, save_state_atomic, replace_state, State
 from macblock.system_dns import (
@@ -45,8 +46,7 @@ def _log(message: str) -> None:
 
 
 def _write_last_apply_file() -> None:
-    VAR_DB_DAEMON_LAST_APPLY.parent.mkdir(parents=True, exist_ok=True)
-    VAR_DB_DAEMON_LAST_APPLY.write_text(f"{int(time.time())}\n", encoding="utf-8")
+    atomic_write_text(VAR_DB_DAEMON_LAST_APPLY, f"{int(time.time())}\n", mode=0o644)
 
 
 def _handle_sigusr1(signum: int, frame: object) -> None:
@@ -538,13 +538,11 @@ def _wait_for_network_change_or_signal(
 
 
 def _write_pid_file() -> None:
-    VAR_DB_DAEMON_PID.parent.mkdir(parents=True, exist_ok=True)
-    VAR_DB_DAEMON_PID.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    atomic_write_text(VAR_DB_DAEMON_PID, f"{os.getpid()}\n", mode=0o644)
 
 
 def _write_ready_file() -> None:
-    VAR_DB_DAEMON_READY.parent.mkdir(parents=True, exist_ok=True)
-    VAR_DB_DAEMON_READY.write_text(f"{int(time.time())}\n", encoding="utf-8")
+    atomic_write_text(VAR_DB_DAEMON_READY, f"{int(time.time())}\n", mode=0o644)
 
 
 def _remove_pid_file() -> None:

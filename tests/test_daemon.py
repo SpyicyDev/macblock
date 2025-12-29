@@ -13,6 +13,38 @@ class _ServiceInfo:
     device: str | None = None
 
 
+def test_marker_files_written_atomically(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pid_path = tmp_path / "daemon.pid"
+    ready_path = tmp_path / "daemon.ready"
+    last_apply_path = tmp_path / "daemon.last_apply"
+
+    monkeypatch.setattr(daemon, "VAR_DB_DAEMON_PID", pid_path)
+    monkeypatch.setattr(daemon, "VAR_DB_DAEMON_READY", ready_path)
+    monkeypatch.setattr(daemon, "VAR_DB_DAEMON_LAST_APPLY", last_apply_path)
+
+    monkeypatch.setattr(daemon.os, "getpid", lambda: 1234)
+    monkeypatch.setattr(daemon.time, "time", lambda: 1000.0)
+
+    calls: list[tuple[object, object, object]] = []
+
+    def _fake_atomic_write_text(path, text, mode=None):
+        calls.append((path, text, mode))
+
+    monkeypatch.setattr(daemon, "atomic_write_text", _fake_atomic_write_text)
+
+    daemon._write_pid_file()
+    daemon._write_ready_file()
+    daemon._write_last_apply_file()
+
+    assert calls == [
+        (pid_path, "1234\n", 0o644),
+        (ready_path, "1000\n", 0o644),
+        (last_apply_path, "1000\n", 0o644),
+    ]
+
+
 def test_seconds_until_resume_none_when_disabled(monkeypatch: pytest.MonkeyPatch):
     st = State(
         schema_version=2,
