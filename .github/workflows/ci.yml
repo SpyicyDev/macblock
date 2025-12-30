@@ -26,7 +26,7 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --locked --dev
 
       - name: Check formatting
         run: uv run ruff format --check src/macblock tests
@@ -39,6 +39,10 @@ jobs:
 
       - name: Run tests
         run: uv run pytest --cov=macblock --cov-report=xml
+
+      - name: Build package
+        if: matrix.python-version == '3.12'
+        run: uv build
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4

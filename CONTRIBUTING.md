@@ -34,6 +34,22 @@ just test       # run pytest
 just run status # run the CLI
 ```
 
+## Lockfile policy
+
+This repo commits `uv.lock`. CI uses `uv sync --locked` and will fail if `pyproject.toml` changes without an updated lockfile.
+
+- If you change dependencies in `pyproject.toml`, run `uv lock` and commit the updated `uv.lock`.
+- Then run `uv sync --dev` (or `just sync`) to refresh your local environment.
+
+## Dev dependencies
+
+Dev dependencies are declared twice in `pyproject.toml`:
+
+- `[project.optional-dependencies].dev` for `pip install -e ".[dev]"`
+- `[dependency-groups].dev` for `uv sync --dev`
+
+Keep the two lists in sync.
+
 ## Commit messages
 
 Use Conventional Commits:
