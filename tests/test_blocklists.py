@@ -154,3 +154,54 @@ def test_update_blocklist_does_not_drift_state_on_sha_mismatch(
         blocklists.update_blocklist(sha256="0" * 64)
 
     assert calls == {"save": 0, "reload": 0, "write": 0}
+
+
+@pytest.mark.parametrize("payload", ["", "\n", " \n\t"])
+def test_update_blocklist_rejects_empty_download_does_not_drift(
+    payload: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state_file = tmp_path / "state.json"
+    raw_file = tmp_path / "blocklist.raw"
+    out_file = tmp_path / "blocklist.conf"
+    allow_file = tmp_path / "whitelist.txt"
+    deny_file = tmp_path / "blacklist.txt"
+
+    monkeypatch.setattr(blocklists, "SYSTEM_STATE_FILE", state_file)
+    monkeypatch.setattr(blocklists, "SYSTEM_RAW_BLOCKLIST_FILE", raw_file)
+    monkeypatch.setattr(blocklists, "SYSTEM_BLOCKLIST_FILE", out_file)
+    monkeypatch.setattr(blocklists, "SYSTEM_WHITELIST_FILE", allow_file)
+    monkeypatch.setattr(blocklists, "SYSTEM_BLACKLIST_FILE", deny_file)
+
+    monkeypatch.setattr(
+        blocklists, "DEFAULT_BLOCKLIST_SOURCE", "https://example.invalid/list"
+    )
+
+    calls = {"save": 0, "reload": 0, "write": 0}
+
+    def _fake_download(url: str, *, expected_sha256: str | None = None) -> str:
+        return payload
+
+    def _fake_atomic_write_text(path: Path, text: str, mode: int | None = None) -> None:
+        calls["write"] += 1
+
+    def _fake_save_state_atomic(path: Path, state) -> None:
+        calls["save"] += 1
+
+    def _fake_reload_dnsmasq() -> None:
+        calls["reload"] += 1
+
+    monkeypatch.setattr(blocklists, "_download", _fake_download)
+    monkeypatch.setattr(blocklists, "atomic_write_text", _fake_atomic_write_text)
+    monkeypatch.setattr(blocklists, "save_state_atomic", _fake_save_state_atomic)
+    monkeypatch.setattr(blocklists, "reload_dnsmasq", _fake_reload_dnsmasq)
+
+    with pytest.raises(MacblockError, match=r"downloaded blocklist is empty"):
+        blocklists.update_blocklist()
+
+    assert calls == {"save": 0, "reload": 0, "write": 0}
+
+    out = capsys.readouterr().out
+    assert "Blocklist updated" not in out

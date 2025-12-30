@@ -15,9 +15,10 @@ from macblock.constants import (
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )
+from macblock.errors import MacblockError
 from macblock.exec import run
 from macblock.resolvers import parse_upstream_conf, read_fallback_upstreams
-from macblock.state import load_state
+from macblock.state import State, load_state
 from macblock.system_dns import get_dns_servers
 from macblock.ui import (
     dns_status,
@@ -73,27 +74,44 @@ def _get_blocklist_count() -> int:
 
 
 def show_status() -> int:
-    st = load_state(SYSTEM_STATE_FILE)
-
     header("📊", "macblock status")
+
+    st: State | None = None
+    rc = 0
+
+    try:
+        st = load_state(SYSTEM_STATE_FILE)
+    except MacblockError as e:
+        rc = 1
+        status_err("state.json", "unreadable/corrupt")
+        status_info("Error", str(e))
+        status_info(
+            "Fix",
+            f'sudo mv "{SYSTEM_STATE_FILE}" "{SYSTEM_STATE_FILE}.bak"  # or delete to reset',
+        )
 
     # Blocking status
     now = int(time.time())
-    paused = st.resume_at_epoch is not None and st.resume_at_epoch > now
+    paused = False
 
-    if st.enabled and not paused:
-        status_active("Blocking", "enabled")
-    elif st.enabled and paused:
-        remaining = st.resume_at_epoch - now if st.resume_at_epoch else 0
-        mins = remaining // 60
-        status_warn("Blocking", f"paused ({mins}m remaining)")
+    if st is None:
+        status_warn("Blocking", "unknown (state unreadable)")
     else:
-        status_inactive("Blocking", "disabled")
+        paused = st.resume_at_epoch is not None and st.resume_at_epoch > now
 
-    # Resume timer
-    if st.resume_at_epoch is not None:
-        when = datetime.fromtimestamp(st.resume_at_epoch)
-        status_info("Resume at", when.strftime("%H:%M:%S"))
+        if st.enabled and not paused:
+            status_active("Blocking", "enabled")
+        elif st.enabled and paused:
+            remaining = st.resume_at_epoch - now if st.resume_at_epoch else 0
+            mins = remaining // 60
+            status_warn("Blocking", f"paused ({mins}m remaining)")
+        else:
+            status_inactive("Blocking", "disabled")
+
+        # Resume timer
+        if st.resume_at_epoch is not None:
+            when = datetime.fromtimestamp(st.resume_at_epoch)
+            status_info("Resume at", when.strftime("%H:%M:%S"))
 
     # dnsmasq process
     subheader("Services")
@@ -136,11 +154,14 @@ def show_status() -> int:
     else:
         status_err("Domains", "0 (run: sudo macblock update)")
 
-    source = st.blocklist_source or "stevenblack"
-    status_info("Source", source)
+    if st is None:
+        status_info("Source", "unknown")
+    else:
+        source = st.blocklist_source or "stevenblack"
+        status_info("Source", source)
 
     # DNS Configuration
-    if st.managed_services:
+    if st is not None and st.managed_services:
         subheader("DNS Configuration")
 
         is_blocking = st.enabled and not paused
@@ -193,4 +214,4 @@ def show_status() -> int:
     status_info("Label", APP_LABEL)
 
     print()
-    return 0
+    return rc

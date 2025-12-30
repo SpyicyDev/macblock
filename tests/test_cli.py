@@ -149,6 +149,7 @@ def test_exec_sudo_execs_with_exe_and_minimal_env(monkeypatch: pytest.MonkeyPatc
 
     assert isinstance(env, dict)
     assert env.get("MACBLOCK_ELEVATED") == "1"
+    assert "PATH" not in env
     assert "PYTHONPATH" not in env
     assert "MACBLOCK_BIN" not in env
     assert "MACBLOCK_DNSMASQ_BIN" not in env
@@ -190,3 +191,4 @@ def test_exec_sudo_execs_with_python_module_when_exe_missing(
 
     assert isinstance(env, dict)
     assert env.get("MACBLOCK_ELEVATED") == "1"
+    assert "PATH" not in env

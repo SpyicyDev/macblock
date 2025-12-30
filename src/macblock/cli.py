@@ -110,7 +110,7 @@ def _exec_sudo(argv: list[str]) -> None:
     env = {
         k: v
         for k, v in os.environ.items()
-        if k in {"PATH", "TERM", "LANG"} or k.startswith("LC_")
+        if k in {"TERM", "LANG"} or k.startswith("LC_")
     }
     env["MACBLOCK_ELEVATED"] = "1"
 

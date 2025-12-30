@@ -24,6 +24,7 @@ from macblock.constants import (
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )
+from macblock.errors import MacblockError
 from macblock.exec import run
 from macblock.resolvers import parse_upstream_conf, read_fallback_upstreams
 from macblock.state import load_state
@@ -311,37 +312,47 @@ def run_diagnostics() -> int:
 
     # DNS state
     subheader("DNS State")
-    st = load_state(SYSTEM_STATE_FILE)
 
-    now = int(time.time())
-    paused = st.resume_at_epoch is not None and st.resume_at_epoch > now
-
-    if st.enabled and not paused:
-        status_ok("Blocking", "enabled")
-    elif st.enabled and paused:
-        remaining = st.resume_at_epoch - now if st.resume_at_epoch else 0
-        mins = remaining // 60
-        status_warn("Blocking", f"paused ({mins}m remaining)")
+    try:
+        st = load_state(SYSTEM_STATE_FILE)
+    except MacblockError as e:
+        status_err("state.json", "unreadable/corrupt")
+        status_info("Blocking", "unknown")
+        status_info("Error", str(e))
+        issues.append("state.json is unreadable/corrupt")
+        suggestions.append(
+            f'sudo mv "{SYSTEM_STATE_FILE}" "{SYSTEM_STATE_FILE}.bak"  # or delete to reset'
+        )
     else:
-        status_info("Blocking", "disabled")
+        now = int(time.time())
+        paused = st.resume_at_epoch is not None and st.resume_at_epoch > now
 
-    if st.managed_services:
-        status_info("Managed", f"{len(st.managed_services)} services")
-        dns_issues = []
-        for svc in st.managed_services:
-            cur = get_dns_servers(svc)
-            expected_localhost = st.enabled and not paused
-            if expected_localhost and cur != ["127.0.0.1"]:
-                dns_issues.append(f"{svc}: expected 127.0.0.1, got {cur}")
-            elif not expected_localhost and cur == ["127.0.0.1"]:
-                dns_issues.append(f"{svc}: still pointing to localhost")
+        if st.enabled and not paused:
+            status_ok("Blocking", "enabled")
+        elif st.enabled and paused:
+            remaining = st.resume_at_epoch - now if st.resume_at_epoch else 0
+            mins = remaining // 60
+            status_warn("Blocking", f"paused ({mins}m remaining)")
+        else:
+            status_info("Blocking", "disabled")
 
-        if dns_issues:
-            for issue in dns_issues:
-                list_item_warn(issue)
-                issues.append(f"DNS misconfigured: {issue}")
-    else:
-        status_warn("Managed", "no services")
+        if st.managed_services:
+            status_info("Managed", f"{len(st.managed_services)} services")
+            dns_issues = []
+            for svc in st.managed_services:
+                cur = get_dns_servers(svc)
+                expected_localhost = st.enabled and not paused
+                if expected_localhost and cur != ["127.0.0.1"]:
+                    dns_issues.append(f"{svc}: expected 127.0.0.1, got {cur}")
+                elif not expected_localhost and cur == ["127.0.0.1"]:
+                    dns_issues.append(f"{svc}: still pointing to localhost")
+
+            if dns_issues:
+                for issue in dns_issues:
+                    list_item_warn(issue)
+                    issues.append(f"DNS misconfigured: {issue}")
+        else:
+            status_warn("Managed", "no services")
 
     # Check for encrypted DNS
     r_dns = run(["/usr/sbin/scutil", "--dns"])

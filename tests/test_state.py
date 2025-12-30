@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from macblock.errors import MacblockError
@@ -71,3 +73,47 @@ def test_load_state_returns_default_when_missing(tmp_path) -> None:
     st = load_state(tmp_path / "missing.json")
     assert st.enabled is False
     assert st.resume_at_epoch is None
+
+
+def test_load_state_raises_on_read_oserror(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "state.json"
+    path.write_text("{}", encoding="utf-8")
+
+    original_read_text = Path.read_text
+
+    def _read_text(self: Path, *args, **kwargs):
+        if self == path:
+            raise OSError("simulated read failure")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
+    with pytest.raises(
+        MacblockError,
+        match=r"failed to read state file: .*state\.json.*delete it to reset to defaults",
+    ):
+        load_state(path)
+
+
+def test_load_state_raises_on_read_unicode_decode_error(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "state.json"
+    path.write_text("{}", encoding="utf-8")
+
+    original_read_text = Path.read_text
+
+    def _read_text(self: Path, *args, **kwargs):
+        if self == path:
+            raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "simulated decode failure")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
+    with pytest.raises(
+        MacblockError,
+        match=r"failed to read state file: .*state\.json.*delete it to reset to defaults",
+    ):
+        load_state(path)

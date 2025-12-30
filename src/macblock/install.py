@@ -593,6 +593,7 @@ def do_uninstall(force: bool = False) -> int:
         spinner.succeed("Services stopped")
 
     file_leftovers: list[str] = []
+    dir_leftovers: list[str] = []
 
     with Spinner("Removing files") as spinner:
 
@@ -608,6 +609,19 @@ def do_uninstall(force: bool = False) -> int:
                 else:
                     spinner.fail(f"Could not remove {p}: {e}")
                     raise MacblockError(f"failed to remove {p}: {e}") from e
+
+        def _rmdir(d: Path) -> None:
+            if not d.exists():
+                return
+            try:
+                d.rmdir()
+            except OSError as e:
+                if force:
+                    dir_leftovers.append(f"dir {d}: {e}")
+                    spinner.warn(f"Could not remove {d}: {e}")
+                else:
+                    spinner.fail(f"Could not remove {d}: {e}")
+                    raise MacblockError(f"failed to remove {d}: {e}") from e
 
         for p in [
             LAUNCHD_DNSMASQ_PLIST,
@@ -635,11 +649,7 @@ def do_uninstall(force: bool = False) -> int:
             _unlink(p)
 
         for d in [VAR_DB_DNSMASQ_DIR, VAR_DB_DIR]:
-            if d.exists():
-                try:
-                    d.rmdir()
-                except Exception:
-                    pass
+            _rmdir(d)
 
         for p in [
             SYSTEM_DNSMASQ_CONF,
@@ -663,14 +673,10 @@ def do_uninstall(force: bool = False) -> int:
             _unlink(p)
 
         for d in [old_bin_dir, SYSTEM_CONFIG_DIR, SYSTEM_LOG_DIR, SYSTEM_SUPPORT_DIR]:
-            if d.exists():
-                try:
-                    d.rmdir()
-                except Exception:
-                    pass
+            _rmdir(d)
 
-        if file_leftovers:
-            spinner.warn("File removal completed with leftovers")
+        if file_leftovers or dir_leftovers:
+            spinner.warn("Removal completed with leftovers")
         else:
             spinner.succeed("Files removed")
 
@@ -693,6 +699,9 @@ def do_uninstall(force: bool = False) -> int:
 
     if file_leftovers:
         leftovers.extend(file_leftovers)
+
+    if dir_leftovers:
+        leftovers.extend(dir_leftovers)
 
     if leftovers:
         msg = "Uninstall incomplete: " + ", ".join(leftovers)
