@@ -28,6 +28,8 @@ Primary risks:
 
 `sudo macblock uninstall` removes the above.
 
+Note on directory permissions: `/Library/Application Support/macblock` and `/Library/Logs/macblock` are created with mode `0o755` so non-root diagnostics (e.g. `macblock status`, `macblock doctor`, log viewing) can work without `sudo`. On multi-user systems, consider tightening permissions to your desired privacy model.
+
 ## Reporting
 
 For sensitive reports, please use GitHub Security Advisories.

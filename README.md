@@ -74,7 +74,7 @@ Status & diagnostics:
 
 - `macblock status`: show current status
 - `macblock doctor`: run diagnostics and health checks
-- `macblock logs [--component daemon|dnsmasq] [--lines N] [--follow] [--stderr]`: view logs
+- `macblock logs [--component daemon|dnsmasq] [--lines N] [--follow] [--stream auto|stdout|stderr]`: view logs
 - `macblock test <domain>`: test resolution against the local resolver
 
 Control:
@@ -93,7 +93,10 @@ Installation & updates:
 Configuration:
 
 - `macblock sources list`: list available blocklist sources
-- `sudo macblock sources set <source>`: set blocklist source
+- `sudo macblock sources set <source>`: set blocklist source (updates state only; run `sudo macblock update` to download/compile/apply)
+- `macblock upstreams list`: list configured fallback upstream DNS servers (if any)
+- `sudo macblock upstreams set [ip ...]`: set fallback upstream DNS servers (prompts if none provided)
+- `sudo macblock upstreams reset`: remove fallback config and use built-in defaults
 - `macblock allow list`: list whitelisted domains
 - `sudo macblock allow add|remove <domain>`: manage whitelist
 - `macblock deny list`: list blacklisted domains
@@ -162,7 +165,7 @@ python3 -m pip uninstall macblock
 macblock keeps its on-disk footprint intentionally small and predictable:
 
 - `/Library/Application Support/macblock/`: persistent state + configuration
-  - `state.json`, `version`, `blocklist.*`, `whitelist.txt`, `blacklist.txt`, `dns.exclude_services`, `etc/dnsmasq.conf`
+  - `state.json`, `version`, `blocklist.*`, `whitelist.txt`, `blacklist.txt`, `dns.exclude_services`, `upstream.fallbacks`, `etc/dnsmasq.conf`
 - `/Library/Logs/macblock/`: service logs (managed by launchd)
   - `daemon.{out,err}.log`, `dnsmasq.{out,err}.log`
 - `/var/db/macblock/`: runtime state (safe to delete; will be recreated)
@@ -172,10 +175,38 @@ macblock keeps its on-disk footprint intentionally small and predictable:
 
 macblock also modifies system DNS settings via `networksetup`.
 
+## Service classification and overrides
+
+macblock chooses a set of “managed” network services to apply DNS changes to (and intentionally skips VPN-ish services/devices) using a heuristic.
+
+If a service is being managed when you don't want it to be (or vice-versa), you can override selection by creating:
+
+- `/Library/Application Support/macblock/dns.exclude_services`
+
+Format:
+
+- One exact service name per line.
+- Blank lines are ignored.
+- Lines starting with `#` are comments.
+
+To find the exact service names on your system:
+
+```bash
+/usr/sbin/networksetup -listallnetworkservices
+```
+
+Example:
+
+```text
+# Keep macblock from touching these services
+Tailscale Tunnel
+My VPN
+```
+
 ## Troubleshooting
 
 - Run `macblock doctor` first.
-- View logs: `macblock logs --component daemon --stderr` or `macblock logs --component dnsmasq --stderr`.
+- View logs: `macblock logs --component daemon --stream stderr` or `macblock logs --component dnsmasq --stream stderr`.
 - Verify DNS state: `scutil --dns` (macblock uses this to preserve split DNS).
 - Port conflict on `:53`: `sudo lsof -i :53 -P -n`.
 

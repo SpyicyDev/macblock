@@ -49,7 +49,9 @@ sudo chown -R $(whoami):admin <path>
 ## What is removed by `sudo macblock uninstall`
 
 - `launchd` jobs created by `macblock`.
-- State/config directories under `/Library/Application Support/macblock`.
+- State/config directories under `/Library/Application Support/macblock` (including `dns.exclude_services` if present).
 - Logs under `/Library/Logs/macblock`.
 - Dynamic state under `/var/db/macblock`.
 - If you upgraded from older versions: `sudo macblock uninstall` also removes any `/etc/resolver/*` files that were previously created by `macblock`.
+
+Note: the `_macblockd` system user/group (used by dnsmasq) is removed only by `sudo macblock uninstall --force`.
