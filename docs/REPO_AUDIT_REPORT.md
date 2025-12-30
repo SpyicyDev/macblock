@@ -521,6 +521,8 @@ Design B (alternative): exponential backoff + persistent “failed” marker sur
 
 ### Docs: Documentation accuracy + completeness
 
+Status: Completed (commit beec6b4).
+
 1) What to change
 - `README.md` has stale `macblock logs ... --stderr` references; current CLI flag is `--stream`:
   - CLI help defines `--stream <name>` for logs at `src/macblock/help.py:180-203`.
@@ -582,6 +584,8 @@ Design B (alternative): exponential backoff + persistent “failed” marker sur
 - Privacy/usability tradeoff for directory modes is explicitly documented.
 
 ### CI/Release/Packaging hygiene
+
+Status: Completed (commit fbee37d).
 
 1) What to change
 - PR/push CI (`.github/workflows/ci.yml`) does not run a packaging build (`uv build`). Current steps end after tests + CLI version check (`.github/workflows/ci.yml:40-50`).
