@@ -6,6 +6,7 @@ import time
 
 from macblock.constants import (
     APP_LABEL,
+    DEFAULT_UPSTREAM_FALLBACKS,
     LAUNCHD_DAEMON_PLIST,
     LAUNCHD_DNSMASQ_PLIST,
     SYSTEM_STATE_FILE,
@@ -295,7 +296,10 @@ def do_upstreams_list() -> int:
 
     fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
     if not fallbacks:
-        status_warn("Configured", "none (using built-in defaults)")
+        status_warn("Configured", "none (missing/unreadable)")
+        subheader("Defaults")
+        for ip in DEFAULT_UPSTREAM_FALLBACKS:
+            list_item(ip)
         print()
         return 0
 
@@ -369,13 +373,19 @@ def do_upstreams_reset() -> int:
     header("🌐", "reset upstream DNS fallbacks")
     status_info("Config file", str(SYSTEM_UPSTREAM_FALLBACKS_FILE))
 
-    with Spinner("Removing fallback config") as spinner:
+    subheader("Defaults")
+    for ip in DEFAULT_UPSTREAM_FALLBACKS:
+        list_item(ip)
+
+    with Spinner("Writing fallback defaults") as spinner:
         try:
-            if SYSTEM_UPSTREAM_FALLBACKS_FILE.exists():
-                SYSTEM_UPSTREAM_FALLBACKS_FILE.unlink()
-            spinner.succeed("Fallback config removed")
+            _atomic_write(
+                SYSTEM_UPSTREAM_FALLBACKS_FILE,
+                render_fallback_upstreams(DEFAULT_UPSTREAM_FALLBACKS),
+            )
+            spinner.succeed("Fallback defaults written")
         except Exception as e:
-            spinner.fail(f"Could not remove config: {e}")
+            spinner.fail(f"Could not write config: {e}")
             raise
 
     with Spinner("Triggering daemon") as spinner:
@@ -384,6 +394,6 @@ def do_upstreams_reset() -> int:
         else:
             spinner.warn("Could not signal daemon")
 
-    result_success("Upstream fallbacks reset")
+    result_success("Upstream fallbacks reset to defaults")
     print()
     return 0

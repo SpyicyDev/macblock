@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import socket
 import time
@@ -23,6 +24,7 @@ from macblock.constants import (
     VAR_DB_DAEMON_LAST_APPLY,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
+    VAR_DB_UPSTREAM_INFO,
 )
 from macblock.errors import MacblockError
 from macblock.exec import run
@@ -39,7 +41,9 @@ from macblock.ui import (
     list_item_warn,
     red,
     result_success,
+    status_active,
     status_err,
+    status_inactive,
     status_info,
     status_ok,
     status_warn,
@@ -65,6 +69,16 @@ def _tcp_connect_ok(host: str, port: int) -> bool:
             s.close()
         except Exception:
             pass
+
+
+def _read_upstream_info() -> dict | None:
+    if not VAR_DB_UPSTREAM_INFO.exists():
+        return None
+    try:
+        raw = VAR_DB_UPSTREAM_INFO.read_text(encoding="utf-8", errors="replace")
+        return json.loads(raw)
+    except Exception:
+        return None
 
 
 def _check_version() -> tuple[bool, str | None]:
@@ -196,19 +210,22 @@ def run_diagnostics() -> int:
 
     # Upstream DNS
     subheader("Upstream DNS")
+    upstream_info = _read_upstream_info()
+
+    upstream_conf = None
     if VAR_DB_UPSTREAM_CONF.exists():
         try:
             upstream_text = VAR_DB_UPSTREAM_CONF.read_text(
                 encoding="utf-8", errors="replace"
             )
-            info = parse_upstream_conf(upstream_text)
+            upstream_conf = parse_upstream_conf(upstream_text)
         except Exception:
-            info = None
+            upstream_conf = None
 
-        if info is None:
+        if upstream_conf is None:
             status_err("Config", "unreadable")
         else:
-            total = len(info.defaults) + info.per_domain_rule_count
+            total = len(upstream_conf.defaults) + upstream_conf.per_domain_rule_count
             if total == 0:
                 status_err("Servers", "0 (none configured)")
                 issues.append("no upstream DNS servers configured")
@@ -218,16 +235,52 @@ def run_diagnostics() -> int:
             else:
                 status_ok("Servers", str(total))
 
-            if info.defaults:
-                status_info("Defaults", ", ".join(info.defaults))
-            if info.per_domain_rule_count:
-                status_info("Per-domain", str(info.per_domain_rule_count))
+            if upstream_info and isinstance(upstream_info, dict):
+                active_defaults = [
+                    x
+                    for x in (upstream_info.get("active_defaults") or [])
+                    if isinstance(x, str)
+                ]
+                source = upstream_info.get("active_source")
+                interface = upstream_info.get("default_route_interface")
+
+                if active_defaults:
+                    suffix = ""
+                    if source == "dhcp-default-route":
+                        suffix = f" (DHCP on {interface})" if interface else " (DHCP)"
+                    elif source == "scutil":
+                        suffix = " (system resolvers)"
+                    elif source == "fallbacks":
+                        suffix = " (fallbacks active)"
+                    status_active(
+                        "Active defaults", ", ".join(active_defaults) + suffix
+                    )
+                elif upstream_conf.defaults:
+                    status_info("Defaults", ", ".join(upstream_conf.defaults))
+            elif upstream_conf.defaults:
+                status_info("Defaults", ", ".join(upstream_conf.defaults))
+
+            if upstream_conf.per_domain_rule_count:
+                status_info("Per-domain", str(upstream_conf.per_domain_rule_count))
     else:
         status_err("Config", "not found")
 
     fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
+    fallbacks_active: bool | None = None
+    if upstream_info and isinstance(upstream_info, dict):
+        fallbacks = [
+            x for x in (upstream_info.get("fallbacks") or []) if isinstance(x, str)
+        ]
+        raw_active = upstream_info.get("fallbacks_active")
+        fallbacks_active = raw_active if isinstance(raw_active, bool) else None
+
     if fallbacks:
-        status_info("Fallbacks", ", ".join(fallbacks))
+        if fallbacks_active is True:
+            status_active("Fallbacks", ", ".join(fallbacks) + " (ACTIVE)")
+        elif fallbacks_active is False:
+            status_inactive("Fallbacks", ", ".join(fallbacks) + " (inactive)")
+        else:
+            status_info("Fallbacks", ", ".join(fallbacks))
     else:
         status_info("Fallbacks", "none")
 

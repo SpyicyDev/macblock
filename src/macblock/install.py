@@ -12,6 +12,7 @@ from pathlib import Path
 from macblock import __version__
 from macblock.constants import (
     APP_LABEL,
+    DEFAULT_UPSTREAM_FALLBACKS,
     DNSMASQ_LISTEN_ADDR,
     DNSMASQ_LISTEN_PORT,
     DNSMASQ_USER,
@@ -44,6 +45,7 @@ from macblock.dnsmasq import render_dnsmasq_conf
 from macblock.errors import MacblockError
 from macblock.exec import run
 from macblock.fs import atomic_write_text, ensure_dir
+from macblock.resolvers import render_fallback_upstreams
 from macblock.launchd import (
     bootout_label,
     bootout_system,
@@ -430,9 +432,19 @@ def do_install(force: bool = False, skip_update: bool = False) -> int:
 
         if not VAR_DB_UPSTREAM_CONF.exists():
             atomic_write_text(
-                VAR_DB_UPSTREAM_CONF, "server=1.1.1.1\nserver=8.8.8.8\n", mode=0o644
+                VAR_DB_UPSTREAM_CONF,
+                "server=1.1.1.1\nserver=1.0.0.1\n",
+                mode=0o644,
             )
         _chown_root(VAR_DB_UPSTREAM_CONF)
+
+        if not SYSTEM_UPSTREAM_FALLBACKS_FILE.exists():
+            atomic_write_text(
+                SYSTEM_UPSTREAM_FALLBACKS_FILE,
+                render_fallback_upstreams(DEFAULT_UPSTREAM_FALLBACKS),
+                mode=0o644,
+            )
+            _chown_root(SYSTEM_UPSTREAM_FALLBACKS_FILE)
 
         atomic_write_text(SYSTEM_DNSMASQ_CONF, render_dnsmasq_conf(), mode=0o644)
         _chown_root(SYSTEM_DNSMASQ_CONF)

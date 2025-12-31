@@ -75,17 +75,25 @@ def test_update_upstreams_writes_defaults_and_per_domain(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ):
     upstream_conf = tmp_path / "upstream.conf"
+    upstream_info = tmp_path / "upstream.info.json"
     monkeypatch.setattr(daemon, "VAR_DB_UPSTREAM_CONF", upstream_conf)
+    monkeypatch.setattr(daemon, "VAR_DB_UPSTREAM_INFO", upstream_info)
     monkeypatch.setattr(daemon, "_load_exclude_services", lambda: set())
+
     monkeypatch.setattr(
-        daemon, "_collect_upstream_defaults", lambda _state, _exc: ["1.1.1.1"]
+        daemon,
+        "_collect_upstream_defaults",
+        lambda _state, _exc: daemon.UpstreamDefaultsPlan(
+            defaults=["1.1.1.1"],
+            source="scutil",
+            default_route_interface=None,
+            fallbacks=["1.1.1.1", "1.0.0.1"],
+            resolvers=daemon.Resolvers(
+                defaults=["9.9.9.9"],
+                per_domain={"corp.example": ["10.0.0.1", "127.0.0.1"]},
+            ),
+        ),
     )
-
-    class _Resolvers:
-        defaults = ["9.9.9.9"]
-        per_domain = {"corp.example": ["10.0.0.1", "127.0.0.1"]}
-
-    monkeypatch.setattr(daemon, "read_system_resolvers", lambda: _Resolvers())
 
     st = State(
         schema_version=2,

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from macblock.exec import run
+from macblock.fs import atomic_write_text
 
 
 @dataclass(frozen=True)
@@ -113,7 +114,14 @@ def parse_upstream_conf(text: str) -> UpstreamConf:
 
 
 def parse_fallback_upstreams(text: str) -> list[str]:
+    ips, _invalid = parse_fallback_upstreams_with_invalid(text)
+    return ips
+
+
+def parse_fallback_upstreams_with_invalid(text: str) -> tuple[list[str], list[str]]:
     ips: list[str] = []
+    invalid: list[str] = []
+
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line:
@@ -124,10 +132,13 @@ def parse_fallback_upstreams(text: str) -> list[str]:
             continue
 
         for token in line.replace(",", " ").split():
-            if _is_ip(token) and token not in ips:
-                ips.append(token)
+            if _is_ip(token):
+                if token not in ips:
+                    ips.append(token)
+            else:
+                invalid.append(token)
 
-    return ips
+    return ips, invalid
 
 
 def read_fallback_upstreams(path: Path) -> list[str]:
@@ -148,3 +159,33 @@ def render_fallback_upstreams(ips: list[str]) -> str:
     out = ["# macblock upstream fallbacks", "# one IP per line", ""]
     out.extend(cleaned)
     return "\n".join(out) + "\n"
+
+
+def ensure_fallback_upstreams_file(
+    path: Path, *, defaults: list[str]
+) -> tuple[list[str], str | None]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        atomic_write_text(path, render_fallback_upstreams(defaults), mode=0o644)
+        return list(defaults), f"fallbacks file missing; restored defaults: {path}"
+    except (PermissionError, OSError) as e:
+        return list(defaults), f"fallbacks file unreadable ({e}); using defaults"
+
+    ips, invalid = parse_fallback_upstreams_with_invalid(text)
+    if not ips:
+        atomic_write_text(path, render_fallback_upstreams(defaults), mode=0o644)
+        return list(
+            defaults
+        ), f"fallbacks file had no valid IPs; restored defaults: {path}"
+
+    if invalid:
+        atomic_write_text(path, render_fallback_upstreams(ips), mode=0o644)
+        shown = ", ".join(invalid[:5])
+        more = f" (+{len(invalid) - 5} more)" if len(invalid) > 5 else ""
+        return (
+            ips,
+            f"fallbacks file had invalid tokens ({shown}{more}); repaired: {path}",
+        )
+
+    return ips, None

@@ -4,14 +4,17 @@ Daemon entry point for launchd. Run with: macblock daemon
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import signal
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 
 from macblock.constants import (
+    DEFAULT_UPSTREAM_FALLBACKS,
     SYSTEM_DNS_EXCLUDE_SERVICES_FILE,
     SYSTEM_STATE_FILE,
     SYSTEM_UPSTREAM_FALLBACKS_FILE,
@@ -20,11 +23,16 @@ from macblock.constants import (
     VAR_DB_DAEMON_LAST_APPLY,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
+    VAR_DB_UPSTREAM_INFO,
 )
 from macblock.errors import MacblockError
 from macblock.exec import run
 from macblock.fs import atomic_write_text
-from macblock.resolvers import read_fallback_upstreams, read_system_resolvers
+from macblock.resolvers import (
+    Resolvers,
+    ensure_fallback_upstreams_file,
+    read_system_resolvers,
+)
 from macblock.state import State, load_state, replace_state, save_state_atomic
 from macblock.system_dns import (
     compute_managed_services,
@@ -251,42 +259,70 @@ def _load_exclude_services() -> set[str]:
         return set()
 
 
-def _collect_upstream_defaults(state: State, exclude: set[str]) -> list[str]:
-    defaults: list[str] = []
+@dataclass(frozen=True)
+class UpstreamDefaultsPlan:
+    defaults: list[str]
+    source: str
+    default_route_interface: str | None
+    fallbacks: list[str]
+    resolvers: Resolvers
+
+
+def _collect_upstream_defaults(state: State, exclude: set[str]) -> UpstreamDefaultsPlan:
+    fallbacks, warn = ensure_fallback_upstreams_file(
+        SYSTEM_UPSTREAM_FALLBACKS_FILE, defaults=DEFAULT_UPSTREAM_FALLBACKS
+    )
+    if warn:
+        _log(f"warning: {warn}")
 
     resolvers = read_system_resolvers()
+
     scutil_defaults: list[str] = []
     for ip in resolvers.defaults:
         if _is_forward_ip(ip) and ip not in scutil_defaults:
             scutil_defaults.append(ip)
 
+    interface = _get_default_route_interface()
     dhcp_defaults: list[str] = []
-    for info in compute_managed_services(exclude=exclude):
-        for ip in read_dhcp_nameservers(info.device or ""):
+    if interface:
+        for ip in read_dhcp_nameservers(interface):
             if _is_forward_ip(ip) and ip not in dhcp_defaults:
                 dhcp_defaults.append(ip)
 
-    defaults.extend(scutil_defaults)
-
     if dhcp_defaults:
-        for ip in dhcp_defaults:
-            if ip not in defaults:
-                defaults.append(ip)
-    else:
-        if not defaults:
-            fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
-            defaults = fallbacks if fallbacks else ["1.1.1.1", "8.8.8.8"]
+        return UpstreamDefaultsPlan(
+            defaults=dhcp_defaults,
+            source="dhcp-default-route",
+            default_route_interface=interface,
+            fallbacks=fallbacks,
+            resolvers=resolvers,
+        )
 
-    return defaults
+    if scutil_defaults:
+        return UpstreamDefaultsPlan(
+            defaults=scutil_defaults,
+            source="scutil",
+            default_route_interface=None,
+            fallbacks=fallbacks,
+            resolvers=resolvers,
+        )
+
+    return UpstreamDefaultsPlan(
+        defaults=fallbacks,
+        source="fallbacks",
+        default_route_interface=None,
+        fallbacks=fallbacks,
+        resolvers=resolvers,
+    )
 
 
 def _update_upstreams(state: State) -> bool:
     exclude = _load_exclude_services()
-    defaults = _collect_upstream_defaults(state, exclude)
-    resolvers = read_system_resolvers()
+    plan = _collect_upstream_defaults(state, exclude)
+    resolvers = plan.resolvers
 
     lines: list[str] = []
-    for ip in defaults:
+    for ip in plan.defaults:
         lines.append(f"server={ip}")
 
     for domain, ips in sorted(resolvers.per_domain.items()):
@@ -296,18 +332,43 @@ def _update_upstreams(state: State) -> bool:
 
     conf_text = "\n".join(lines) + "\n"
 
+    info = {
+        "schema_version": 1,
+        "active_defaults": plan.defaults,
+        "active_source": plan.source,
+        "default_route_interface": plan.default_route_interface,
+        "fallbacks": plan.fallbacks,
+        "fallbacks_active": plan.source == "fallbacks",
+    }
+    info_text = json.dumps(info, indent=2, sort_keys=True) + "\n"
+
+    conf_changed = True
     try:
         if VAR_DB_UPSTREAM_CONF.exists():
             existing = VAR_DB_UPSTREAM_CONF.read_text(
                 encoding="utf-8", errors="replace"
             )
-            if existing == conf_text:
-                return False
+            conf_changed = existing != conf_text
     except Exception:
         pass
 
-    atomic_write_text(VAR_DB_UPSTREAM_CONF, conf_text, mode=0o644)
-    return True
+    info_changed = True
+    try:
+        if VAR_DB_UPSTREAM_INFO.exists():
+            existing_info = VAR_DB_UPSTREAM_INFO.read_text(
+                encoding="utf-8", errors="replace"
+            )
+            info_changed = existing_info != info_text
+    except Exception:
+        pass
+
+    if conf_changed:
+        atomic_write_text(VAR_DB_UPSTREAM_CONF, conf_text, mode=0o644)
+
+    if info_changed:
+        atomic_write_text(VAR_DB_UPSTREAM_INFO, info_text, mode=0o644)
+
+    return conf_changed
 
 
 def _backup_service_dns(

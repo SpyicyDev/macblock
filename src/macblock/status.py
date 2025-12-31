@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime
 
@@ -14,6 +15,7 @@ from macblock.constants import (
     VAR_DB_DAEMON_LAST_APPLY,
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
+    VAR_DB_UPSTREAM_INFO,
 )
 from macblock.errors import MacblockError
 from macblock.exec import run
@@ -38,6 +40,16 @@ def _format_list(items: list[str], *, max_items: int = 4) -> str:
         return ", ".join(items)
     shown = ", ".join(items[:max_items])
     return f"{shown} (+{len(items) - max_items} more)"
+
+
+def _read_upstream_info() -> dict | None:
+    if not VAR_DB_UPSTREAM_INFO.exists():
+        return None
+    try:
+        raw = VAR_DB_UPSTREAM_INFO.read_text(encoding="utf-8", errors="replace")
+        return json.loads(raw)
+    except Exception:
+        return None
 
 
 def _read_pid(path) -> int | None:
@@ -171,31 +183,69 @@ def show_status() -> int:
 
     subheader("Upstream DNS")
 
+    upstream_conf = None
     if VAR_DB_UPSTREAM_CONF.exists():
         try:
             upstream_text = VAR_DB_UPSTREAM_CONF.read_text(
                 encoding="utf-8", errors="replace"
             )
-            info = parse_upstream_conf(upstream_text)
+            upstream_conf = parse_upstream_conf(upstream_text)
         except Exception:
-            info = None
+            upstream_conf = None
 
-        if info is None:
+        if upstream_conf is None:
             status_warn("upstream.conf", "unreadable")
-        else:
-            if info.defaults:
-                status_info("Defaults", _format_list(info.defaults))
-            else:
-                status_warn("Defaults", "none")
-            status_info("Per-domain", str(info.per_domain_rule_count))
     else:
         status_warn("upstream.conf", "not found")
 
-    fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
-    if fallbacks:
-        status_info("Fallbacks", _format_list(fallbacks))
+    upstream_info = _read_upstream_info()
+    if upstream_info and isinstance(upstream_info, dict):
+        active_defaults = [
+            x
+            for x in (upstream_info.get("active_defaults") or [])
+            if isinstance(x, str)
+        ]
+        source = upstream_info.get("active_source")
+        interface = upstream_info.get("default_route_interface")
+
+        if active_defaults:
+            suffix = ""
+            if source == "dhcp-default-route":
+                suffix = f" (DHCP on {interface})" if interface else " (DHCP)"
+            elif source == "scutil":
+                suffix = " (system resolvers)"
+            elif source == "fallbacks":
+                suffix = " (fallbacks active)"
+            status_active("Active defaults", _format_list(active_defaults) + suffix)
+        else:
+            status_warn("Active defaults", "unknown")
+
+        fallbacks = [
+            x for x in (upstream_info.get("fallbacks") or []) if isinstance(x, str)
+        ]
+        fallbacks_active = bool(upstream_info.get("fallbacks_active"))
+        if fallbacks:
+            if fallbacks_active:
+                status_active("Fallbacks", _format_list(fallbacks) + " (ACTIVE)")
+            else:
+                status_inactive("Fallbacks", _format_list(fallbacks) + " (inactive)")
+        else:
+            status_warn("Fallbacks", "none")
     else:
-        status_info("Fallbacks", "none")
+        if upstream_conf is not None:
+            if upstream_conf.defaults:
+                status_info("Defaults", _format_list(upstream_conf.defaults))
+            else:
+                status_warn("Defaults", "none")
+
+        fallbacks = read_fallback_upstreams(SYSTEM_UPSTREAM_FALLBACKS_FILE)
+        if fallbacks:
+            status_info("Fallbacks", _format_list(fallbacks))
+        else:
+            status_info("Fallbacks", "none")
+
+    if upstream_conf is not None:
+        status_info("Per-domain", str(upstream_conf.per_domain_rule_count))
 
     # Installation status
     subheader("Installation")

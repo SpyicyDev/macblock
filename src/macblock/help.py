@@ -437,12 +437,13 @@ COMMAND_HELP["upstreams"] = """{bold}USAGE{reset}
   macblock upstreams <subcommand> [args]
 
 {bold}DESCRIPTION{reset}
-  Manage last-resort upstream DNS servers used when DHCP provides no resolvers.
+  Manage last-resort upstream DNS servers used only when no upstream resolvers are
+  available from the default-route interface (DHCP) or system resolvers.
 
 {bold}SUBCOMMANDS{reset}
-  {green}list{reset}           Show configured fallbacks (if any)
+  {green}list{reset}           Show configured fallbacks
   {green}set{reset}            Set fallbacks (interactive if no IPs provided) {dim}(sudo){reset}
-  {green}reset{reset}          Remove fallback config file {dim}(sudo){reset}
+  {green}reset{reset}          Reset fallbacks to defaults {dim}(sudo){reset}
 
 {bold}INHERITED FLAGS{reset}
   {yellow}-h, --help{reset}   Show help for command
@@ -478,7 +479,7 @@ COMMAND_HELP["upstreams reset"] = """{bold}USAGE{reset}
   macblock upstreams reset
 
 {bold}DESCRIPTION{reset}
-  Remove the fallback config file so macblock uses built-in defaults.
+  Reset fallback upstream DNS servers to the built-in defaults.
   Requires sudo privileges.
 """
 

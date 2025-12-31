@@ -25,8 +25,11 @@ SYSTEM_DNSMASQ_CONF = SYSTEM_CONFIG_DIR / "dnsmasq.conf"
 SYSTEM_DNS_EXCLUDE_SERVICES_FILE = SYSTEM_SUPPORT_DIR / "dns.exclude_services"
 SYSTEM_UPSTREAM_FALLBACKS_FILE = SYSTEM_SUPPORT_DIR / "upstream.fallbacks"
 
+DEFAULT_UPSTREAM_FALLBACKS = ["1.1.1.1", "1.0.0.1"]
+
 VAR_DB_DIR = Path("/var/db") / APP_NAME
 VAR_DB_UPSTREAM_CONF = VAR_DB_DIR / "upstream.conf"
+VAR_DB_UPSTREAM_INFO = VAR_DB_DIR / "upstream.info.json"
 VAR_DB_DAEMON_PID = VAR_DB_DIR / "daemon.pid"
 VAR_DB_DAEMON_READY = VAR_DB_DIR / "daemon.ready"
 VAR_DB_DAEMON_LAST_APPLY = VAR_DB_DIR / "daemon.last_apply"

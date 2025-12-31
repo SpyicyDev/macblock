@@ -96,7 +96,7 @@ Configuration:
 - `sudo macblock sources set <source>`: set blocklist source (updates state only; run `sudo macblock update` to download/compile/apply)
 - `macblock upstreams list`: list configured fallback upstream DNS servers (if any)
 - `sudo macblock upstreams set [ip ...]`: set fallback upstream DNS servers (prompts if none provided)
-- `sudo macblock upstreams reset`: remove fallback config and use built-in defaults
+- `sudo macblock upstreams reset`: reset fallback upstream DNS servers to built-in defaults
 - `macblock allow list`: list whitelisted domains
 - `sudo macblock allow add|remove <domain>`: manage whitelist
 - `macblock deny list`: list blacklisted domains
