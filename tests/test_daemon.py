@@ -144,6 +144,14 @@ def test_apply_state_enables_blocking_and_persists_state(
     monkeypatch.setattr(daemon, "_update_upstreams", lambda _state: False)
     monkeypatch.setattr(daemon, "_hup_dnsmasq", lambda: True)
 
+    run_calls: list[tuple[list[str], float | None]] = []
+
+    def _run(cmd: list[str], *, timeout: float | None = 10.0) -> RunResult:
+        run_calls.append((cmd, timeout))
+        return RunResult(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(daemon, "run", _run)
+
     daemon.save_state_atomic(
         state_file,
         State(
@@ -160,6 +168,12 @@ def test_apply_state_enables_blocking_and_persists_state(
     assert ok is True
     assert issues == []
     assert set_calls == [("Wi-Fi", ["127.0.0.1"])]
+
+    assert [cmd for cmd, _timeout in run_calls] == [
+        ["/usr/bin/dscacheutil", "-flushcache"],
+        ["/usr/bin/killall", "-HUP", "mDNSResponder"],
+    ]
+    assert [timeout for _cmd, timeout in run_calls] == [5.0, 5.0]
 
     st2 = load_state(state_file)
     assert st2.managed_services == ["Wi-Fi"]
@@ -203,6 +217,14 @@ def test_apply_state_paused_restores_dns(tmp_path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(daemon, "_update_upstreams", lambda _state: False)
     monkeypatch.setattr(daemon, "_hup_dnsmasq", lambda: True)
 
+    run_calls: list[tuple[list[str], float | None]] = []
+
+    def _run(cmd: list[str], *, timeout: float | None = 10.0) -> RunResult:
+        run_calls.append((cmd, timeout))
+        return RunResult(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(daemon, "run", _run)
+
     daemon.save_state_atomic(
         state_file,
         State(
@@ -222,6 +244,12 @@ def test_apply_state_paused_restores_dns(tmp_path, monkeypatch: pytest.MonkeyPat
     assert issues == []
     assert ("Wi-Fi", ["9.9.9.9"]) in restore_calls
     assert ("Wi-Fi", ["corp"]) in restore_calls
+
+    assert [cmd for cmd, _timeout in run_calls] == [
+        ["/usr/bin/dscacheutil", "-flushcache"],
+        ["/usr/bin/killall", "-HUP", "mDNSResponder"],
+    ]
+    assert [timeout for _cmd, timeout in run_calls] == [5.0, 5.0]
 
 
 class _FakeClock:

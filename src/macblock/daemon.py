@@ -229,6 +229,17 @@ def _hup_dnsmasq() -> bool:
         return False
 
 
+def _flush_dns_cache_best_effort() -> None:
+    for cmd in [
+        ["/usr/bin/dscacheutil", "-flushcache"],
+        ["/usr/bin/killall", "-HUP", "mDNSResponder"],
+    ]:
+        try:
+            run(cmd, timeout=5.0)
+        except Exception:
+            continue
+
+
 def _load_exclude_services() -> set[str]:
     if not SYSTEM_DNS_EXCLUDE_SERVICES_FILE.exists():
         return set()
@@ -320,10 +331,13 @@ def _backup_service_dns(
     }
 
 
-def _enable_blocking(state: State, managed_infos: list) -> tuple[State, list[str]]:
+def _enable_blocking(
+    state: State, managed_infos: list
+) -> tuple[State, list[str], bool]:
     dns_backup = dict(state.dns_backup)
     managed_names: list[str] = []
     failures: list[str] = []
+    changed = False
 
     for info in managed_infos:
         managed_names.append(info.name)
@@ -336,6 +350,7 @@ def _enable_blocking(state: State, managed_infos: list) -> tuple[State, list[str
             continue
 
         if set_dns_servers(info.name, ["127.0.0.1"]):
+            changed = True
             _log(f"apply: {info.name}: set DNS -> 127.0.0.1")
         else:
             failures.append(f"failed to set DNS for {info.name}")
@@ -346,12 +361,13 @@ def _enable_blocking(state: State, managed_infos: list) -> tuple[State, list[str
         dns_backup=dns_backup,
         managed_services=managed_names,
     )
-    return new_state, failures
+    return new_state, failures, changed
 
 
-def _disable_blocking(state: State, managed_names: list[str]) -> list[str]:
+def _disable_blocking(state: State, managed_names: list[str]) -> tuple[list[str], bool]:
     to_restore = state.managed_services if state.managed_services else managed_names
     failures: list[str] = []
+    changed = False
 
     for service in to_restore:
         backup_data = state.dns_backup.get(service)
@@ -370,6 +386,7 @@ def _disable_blocking(state: State, managed_names: list[str]) -> list[str]:
             _log(f"apply: {service}: DNS already restored")
         else:
             if set_dns_servers(service, desired_dns):
+                changed = True
                 _log(f"apply: {service}: restored DNS -> {desired_dns}")
             else:
                 failures.append(f"failed to restore DNS for {service}")
@@ -380,6 +397,7 @@ def _disable_blocking(state: State, managed_names: list[str]) -> list[str]:
             _log(f"apply: {service}: search domains already restored")
         else:
             if set_search_domains(service, desired_search):
+                changed = True
                 _log(f"apply: {service}: restored search domains -> {desired_search}")
             else:
                 failures.append(f"failed to restore search domains for {service}")
@@ -387,7 +405,7 @@ def _disable_blocking(state: State, managed_names: list[str]) -> list[str]:
                     f"apply: {service}: failed to restore search domains -> {desired_search}"
                 )
 
-    return failures
+    return failures, changed
 
 
 def _verify_dns_state(
@@ -429,14 +447,16 @@ def _apply_state(*, reason: str = "unknown") -> tuple[bool, list[str]]:
     else:
         _log("apply: no managed services detected")
 
+    dns_changed = False
+
     if state.enabled and not paused:
         _log("apply: enforcing localhost DNS (127.0.0.1)")
-        state, failures = _enable_blocking(state, managed_infos)
+        state, failures, dns_changed = _enable_blocking(state, managed_infos)
         issues.extend(failures)
         should_be_localhost = True
     else:
         _log("apply: restoring DNS from backup")
-        failures = _disable_blocking(state, managed_names)
+        failures, dns_changed = _disable_blocking(state, managed_names)
         issues.extend(failures)
         should_be_localhost = False
 
@@ -462,6 +482,10 @@ def _apply_state(*, reason: str = "unknown") -> tuple[bool, list[str]]:
 
     elapsed = time.time() - started
     ok = len(issues) == 0
+    if ok and dns_changed:
+        _flush_dns_cache_best_effort()
+        _log("apply: flushed DNS cache")
+
     if ok:
         _log(f"apply done: success ({elapsed:.2f}s)")
     else:
