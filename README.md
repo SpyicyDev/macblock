@@ -109,7 +109,7 @@ Tip: `macblock <command> --help` shows per-command usage.
 1. `dnsmasq` listens on `127.0.0.1:53` and serves DNS.
 2. The macblock daemon watches for network changes and reconciles state.
 3. When enabled, macblock sets DNS to `127.0.0.1` for a set of managed macOS network services (it intentionally skips VPN-ish services/devices).
-4. macblock generates dnsmasq upstream routing from `scutil --dns` so domain-specific resolvers (VPN/corporate split-DNS) keep working.
+4. macblock generates dnsmasq upstream routing by preferring DHCP nameservers from the default-route interface, and falling back to system resolvers (`scutil --dns`), so domain-specific resolvers (VPN/corporate split-DNS) keep working.
 5. Blocked domains are answered as `NXDOMAIN` via dnsmasq rules.
 
 ```mermaid
@@ -120,7 +120,7 @@ flowchart TD
   LD[launchd] --> D[macblock daemon]
   D -->|reads/writes| ST
   D -->|sets per-service DNS to 127.0.0.1| SCD[System DNS config]
-  D -->|generates upstream.conf from scutil --dns| UP[(upstream.conf)]
+  D -->|generates upstream.conf from DHCP/scutil| UP[(upstream.conf)]
 
   SCD --> DNS[dnsmasq on 127.0.0.1:53]
   UP --> DNS
@@ -169,7 +169,7 @@ macblock keeps its on-disk footprint intentionally small and predictable:
 - `/Library/Logs/macblock/`: service logs (managed by launchd)
   - `daemon.{out,err}.log`, `dnsmasq.{out,err}.log`
 - `/var/db/macblock/`: runtime state (safe to delete; will be recreated)
-  - `upstream.conf`, `daemon.pid`, `daemon.ready`, `dnsmasq/dnsmasq.pid`
+  - `upstream.conf`, `upstream.info.json`, `daemon.pid`, `daemon.ready`, `daemon.last_apply`, `dnsmasq/dnsmasq.pid`
 - `/Library/LaunchDaemons/`: launchd plists
   - `com.local.macblock.daemon.plist`, `com.local.macblock.dnsmasq.plist`
 

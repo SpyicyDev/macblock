@@ -460,6 +460,7 @@ COMMAND_HELP["upstreams list"] = """{bold}USAGE{reset}
 
 {bold}DESCRIPTION{reset}
   Show the configured fallback upstream DNS servers.
+  If the fallbacks file is missing or unreadable, shows the built-in defaults.
 """
 
 COMMAND_HELP["upstreams set"] = """{bold}USAGE{reset}
@@ -479,7 +480,7 @@ COMMAND_HELP["upstreams reset"] = """{bold}USAGE{reset}
   macblock upstreams reset
 
 {bold}DESCRIPTION{reset}
-  Reset fallback upstream DNS servers to the built-in defaults.
+  Write the built-in defaults to the fallbacks config file.
   Requires sudo privileges.
 """
 

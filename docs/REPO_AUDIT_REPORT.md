@@ -527,10 +527,10 @@ Status: Completed (commit beec6b4).
 - `README.md` has stale `macblock logs ... --stderr` references; current CLI flag is `--stream`:
   - CLI help defines `--stream <name>` for logs at `src/macblock/help.py:180-203`.
   - Parser implements `--stream` at `src/macblock/cli.py:163-183`.
-- `README.md` does not document `macblock upstreams ...`, but the CLI supports it:
+- `README.md` should document `macblock upstreams ...` (now addressed).
   - Help text at `src/macblock/help.py:436-455`.
   - Parser support at `src/macblock/cli.py:245-254`.
-- `README.md` “Filesystem footprint” omits `upstream.fallbacks`:
+- `README.md` “Filesystem footprint” should include `upstream.fallbacks` (now addressed).
   - Path constant is `src/macblock/constants.py:26` (`SYSTEM_UPSTREAM_FALLBACKS_FILE`).
 - `README.md` should clarify `sources set` vs `update`:
   - `set_blocklist_source` only updates state (`src/macblock/blocklists.py:170-187`).
