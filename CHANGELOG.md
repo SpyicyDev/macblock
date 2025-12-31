@@ -1,5 +1,90 @@
 # Changelog
 
+## [0.2.9](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.9) - 2025-12-31
+
+### Bug Fixes
+
+- fix: clean up upstream info file on uninstall
+
+- fix: improve dnsmasq port conflict guidance
+
+- fix: harden HTML detection for downloads
+
+- fix: error on unknown logs/update flags
+
+- fix: align update and daemon with audit criteria
+
+- fix: harden diagnostics and file writes
+
+- fix(daemon): exit after consecutive failures
+
+- fix(daemon): treat IPv6 as network-ready
+
+- fix(install): make uninstall --force best-effort
+
+- fix(cli): avoid sudo -E preserve-env
+
+- fix(lists): tolerate invalid entries and write atomically
+
+- fix(state): fail cleanly on corrupt state.json
+
+- fix(blocklists): fail on suspiciously small downloads
+
+- fix(fs): pin permissions on generated files
+
+- fix(daemon): write marker files atomically
+
+- fix(exec): avoid UnicodeDecodeError on output
+
+
+### Documentation
+
+- docs(audit): mark docs and CI hygiene completed
+
+- docs: refresh README and uninstall guidance
+
+- docs(audit): mark G and I completed
+
+- docs(audit): mark D and E completed
+
+- docs(audit): mark C and F completed
+
+- docs(audit): mark A completed
+
+- docs(audit): mark K completed
+
+- docs(audit): mark B and J completed
+
+
+### Features
+
+- feat: prefer default-route DHCP upstreams and self-heal fallbacks
+
+- feat: flush DNS cache after apply
+
+- Added comprehensive audit report
+
+- feat(upstreams)!: simplify CLI and tighten fallback activation
+
+
+### Miscellaneous
+
+- chore: add explicit ruff config
+
+- ci: enforce locked uv sync and run build
+
+
+### Refactoring
+
+- refactor: remove vestigial resolver_domains
+
+- refactor: dedupe UI helpers
+
+
+### Testing
+
+- test(blocklists): cover sha mismatch without state drift
+
 ## [0.2.8](https://github.com/SpyicyDev/macblock/releases/tag/v0.2.8) - 2025-12-28
 
 ### Documentation
