@@ -168,16 +168,27 @@ def _download(url: str, *, expected_sha256: str | None = None) -> str:
 def reload_dnsmasq() -> None:
     label = f"{APP_LABEL}.dnsmasq"
     if service_exists(label):
-        kickstart(label)
+        try:
+            kickstart(label)
+        except Exception as e:
+            raise MacblockError(f"failed to reload dnsmasq via launchd: {e}") from e
         return
 
-    if VAR_DB_DNSMASQ_PID.exists():
-        try:
-            pid = int(VAR_DB_DNSMASQ_PID.read_text(encoding="utf-8").strip())
-        except Exception:
-            pid = 0
-        if pid > 1:
-            run(["/bin/kill", "-HUP", str(pid)])
+    if not VAR_DB_DNSMASQ_PID.exists():
+        raise MacblockError("dnsmasq is not running (pid file missing)")
+
+    try:
+        pid = int(VAR_DB_DNSMASQ_PID.read_text(encoding="utf-8").strip())
+    except Exception as e:
+        raise MacblockError(f"dnsmasq pid file unreadable: {e}") from e
+
+    if pid <= 1:
+        raise MacblockError(f"dnsmasq is not running (invalid pid: {pid})")
+
+    r = run(["/bin/kill", "-HUP", str(pid)])
+    if r.returncode != 0:
+        detail = (r.stderr or r.stdout).strip() or "unknown error"
+        raise MacblockError(f"failed to reload dnsmasq (pid={pid}): {detail}")
 
 
 def list_blocklist_sources() -> int:
@@ -220,6 +231,53 @@ def set_blocklist_source(source: str) -> int:
 def update_blocklist(source: str | None = None, sha256: str | None = None) -> int:
     st = load_state(SYSTEM_STATE_FILE)
     chosen = source or st.blocklist_source or DEFAULT_BLOCKLIST_SOURCE
+
+    prev_state_text: str | None = None
+    if SYSTEM_STATE_FILE.exists():
+        prev_state_text = SYSTEM_STATE_FILE.read_text(
+            encoding="utf-8", errors="replace"
+        )
+
+    prev_raw_text: str | None = None
+    if SYSTEM_RAW_BLOCKLIST_FILE.exists():
+        prev_raw_text = SYSTEM_RAW_BLOCKLIST_FILE.read_text(
+            encoding="utf-8", errors="replace"
+        )
+
+    prev_blocklist_text: str | None = None
+    if SYSTEM_BLOCKLIST_FILE.exists():
+        prev_blocklist_text = SYSTEM_BLOCKLIST_FILE.read_text(
+            encoding="utf-8", errors="replace"
+        )
+
+    did_write_blocklist = False
+    did_write_state = False
+
+    def _rollback() -> None:
+        errors: list[str] = []
+
+        def _restore(path: Path, previous: str | None) -> None:
+            if previous is None:
+                if path.exists():
+                    path.unlink()
+            else:
+                atomic_write_text(path, previous, mode=0o644)
+
+        try:
+            if did_write_state:
+                _restore(SYSTEM_STATE_FILE, prev_state_text)
+        except Exception as e:
+            errors.append(f"state.json: {e}")
+
+        try:
+            if did_write_blocklist:
+                _restore(SYSTEM_RAW_BLOCKLIST_FILE, prev_raw_text)
+                _restore(SYSTEM_BLOCKLIST_FILE, prev_blocklist_text)
+        except Exception as e:
+            errors.append(f"blocklist files: {e}")
+
+        if errors:
+            raise MacblockError("rollback failed: " + "; ".join(errors))
 
     if chosen.startswith("https://"):
         url = chosen
@@ -266,27 +324,46 @@ def update_blocklist(source: str | None = None, sha256: str | None = None) -> in
             )
 
         atomic_write_text(SYSTEM_RAW_BLOCKLIST_FILE, raw, mode=0o644)
-        count = compile_blocklist(
-            SYSTEM_RAW_BLOCKLIST_FILE,
-            SYSTEM_WHITELIST_FILE,
-            SYSTEM_BLACKLIST_FILE,
-            SYSTEM_BLOCKLIST_FILE,
-        )
+        did_write_blocklist = True
+        try:
+            count = compile_blocklist(
+                SYSTEM_RAW_BLOCKLIST_FILE,
+                SYSTEM_WHITELIST_FILE,
+                SYSTEM_BLACKLIST_FILE,
+                SYSTEM_BLOCKLIST_FILE,
+            )
+        except Exception as e:
+            spinner.fail(f"Compile failed: {e}")
+            _rollback()
+            raise
+
         spinner.succeed(f"Compiled {count:,} domains")
 
     # Save state
-    save_state_atomic(
-        SYSTEM_STATE_FILE,
-        replace_state(st, blocklist_source=chosen),
-    )
+    try:
+        save_state_atomic(
+            SYSTEM_STATE_FILE,
+            replace_state(st, blocklist_source=chosen),
+        )
+        did_write_state = True
+    except Exception as e:
+        _rollback()
+        raise MacblockError(f"failed to save state: {e}") from e
 
     # Reload dnsmasq
     with Spinner("Reloading dnsmasq") as spinner:
         try:
             reload_dnsmasq()
             spinner.succeed("Reloaded dnsmasq")
-        except Exception:
-            spinner.warn("Could not reload dnsmasq (may need restart)")
+        except Exception as e:
+            spinner.fail(f"Reload failed: {e}")
+            try:
+                _rollback()
+            except Exception as rollback_err:
+                raise MacblockError(
+                    f"reload failed and rollback was incomplete: {rollback_err}"
+                ) from e
+            raise MacblockError(f"failed to reload dnsmasq: {e}") from e
 
     result_success(f"Blocklist updated: {count:,} domains blocked")
     print()

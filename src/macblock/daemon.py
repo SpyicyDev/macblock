@@ -21,10 +21,11 @@ from macblock.constants import (
     VAR_DB_DNSMASQ_PID,
     VAR_DB_UPSTREAM_CONF,
 )
+from macblock.errors import MacblockError
 from macblock.exec import run
 from macblock.fs import atomic_write_text
 from macblock.resolvers import read_fallback_upstreams, read_system_resolvers
-from macblock.state import load_state, save_state_atomic, replace_state, State
+from macblock.state import State, load_state, replace_state, save_state_atomic
 from macblock.system_dns import (
     compute_managed_services,
     get_dns_servers,
@@ -613,7 +614,20 @@ def run_daemon() -> int:
         while not _shutdown_requested:
             _trigger_apply = False
 
-            state_for_wait = load_state(SYSTEM_STATE_FILE)
+            try:
+                state_for_wait = load_state(SYSTEM_STATE_FILE)
+            except MacblockError as e:
+                _log(f"failed to load state for network wait: {e}")
+                state_for_wait = State(
+                    schema_version=2,
+                    enabled=False,
+                    resume_at_epoch=None,
+                    blocklist_source=None,
+                    dns_backup={},
+                    managed_services=[],
+                    resolver_domains=[],
+                )
+
             if _should_wait_for_network_before_apply(state_for_wait):
                 _wait_for_network_ready(15.0)
 
@@ -649,8 +663,12 @@ def run_daemon() -> int:
             if _shutdown_requested:
                 break
 
-            state = load_state(SYSTEM_STATE_FILE)
-            timeout = _seconds_until_resume(state)
+            try:
+                state = load_state(SYSTEM_STATE_FILE)
+                timeout = _seconds_until_resume(state)
+            except MacblockError as e:
+                _log(f"failed to load state for resume timer: {e}")
+                timeout = None
 
             if timeout is None:
                 timeout = 300.0

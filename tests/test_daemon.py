@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import pytest
 
 import macblock.daemon as daemon
+from macblock.errors import MacblockError
 from macblock.exec import RunResult
 from macblock.state import State, load_state
 
@@ -387,6 +388,43 @@ def test_run_daemon_exits_after_consecutive_failures(
     rc = daemon.run_daemon()
     assert rc == 1
     assert apply_calls["count"] == 5
+
+
+def test_run_daemon_state_load_error_returns_nonzero_and_cleans_up(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+):
+    pid_file = tmp_path / "daemon.pid"
+    ready_file = tmp_path / "daemon.ready"
+    last_apply_file = tmp_path / "daemon.last_apply"
+
+    monkeypatch.setattr(daemon, "VAR_DB_DAEMON_PID", pid_file)
+    monkeypatch.setattr(daemon, "VAR_DB_DAEMON_READY", ready_file)
+    monkeypatch.setattr(daemon, "VAR_DB_DAEMON_LAST_APPLY", last_apply_file)
+    monkeypatch.setattr(daemon, "SYSTEM_STATE_FILE", tmp_path / "state.json")
+
+    monkeypatch.setattr(daemon, "_check_stale_daemon", lambda: False)
+    monkeypatch.setattr(daemon.signal, "signal", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        daemon, "_should_wait_for_network_before_apply", lambda _st: False
+    )
+
+    def _raise(_p):
+        raise MacblockError("corrupt")
+
+    monkeypatch.setattr(daemon, "load_state", _raise)
+
+    monkeypatch.setattr(daemon, "_apply_state", lambda **_k: (False, ["issue"]))
+    monkeypatch.setattr(
+        daemon, "_wait_for_network_change_or_signal", lambda _t: ("timeout", 0)
+    )
+
+    daemon._shutdown_requested = False
+    daemon._trigger_apply = False
+
+    rc = daemon.run_daemon()
+    assert rc == 1
+    assert not pid_file.exists()
+    assert not ready_file.exists()
 
 
 def test_wait_for_network_ready_times_out(monkeypatch: pytest.MonkeyPatch):
