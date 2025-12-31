@@ -2,7 +2,7 @@ import pytest
 
 import macblock.cli as cli
 from macblock.cli import _parse_args
-from macblock.errors import PrivilegeError
+from macblock.errors import MacblockError, PrivilegeError
 
 
 def test_parser_status():
@@ -68,6 +68,16 @@ def test_parser_logs_stream_sets_stderr():
     cmd, args = _parse_args(["logs", "--stream", "stderr"])
     assert cmd == "logs"
     assert args["stream"] == "stderr"
+
+
+def test_parser_logs_raises_on_unknown_flag():
+    with pytest.raises(MacblockError, match=r"unknown flag for logs"):
+        _parse_args(["logs", "--nope"])
+
+
+def test_parser_update_raises_on_unknown_flag():
+    with pytest.raises(MacblockError, match=r"unknown flag for update"):
+        _parse_args(["update", "--nope"])
 
 
 def test_parser_upstreams_list():

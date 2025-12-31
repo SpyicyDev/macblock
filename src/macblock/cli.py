@@ -184,7 +184,14 @@ def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
                 args["stream"] = rest[i + 1]
                 i += 2
             else:
-                i += 1
+                token = rest[i]
+                if token.startswith("-"):
+                    raise MacblockError(
+                        f"unknown flag for logs: {token} (run 'macblock logs --help')"
+                    )
+                raise MacblockError(
+                    f"unexpected argument for logs: {token} (run 'macblock logs --help')"
+                )
 
     elif cmd == "install":
         args["force"] = "--force" in rest
@@ -217,7 +224,14 @@ def _parse_args(argv: list[str]) -> tuple[str | None, dict]:
                 args["sha256"] = rest[i + 1]
                 i += 2
             else:
-                i += 1
+                token = rest[i]
+                if token.startswith("-"):
+                    raise MacblockError(
+                        f"unknown flag for update: {token} (run 'macblock update --help')"
+                    )
+                raise MacblockError(
+                    f"unexpected argument for update: {token} (run 'macblock update --help')"
+                )
 
     elif cmd == "sources":
         if not rest:
