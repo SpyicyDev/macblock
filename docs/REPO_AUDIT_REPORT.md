@@ -647,8 +647,7 @@ External support
 - Duplicate UI helpers existed in both `src/macblock/colors.py` and `src/macblock/ui.py`. (Completed: `src/macblock/colors.py` is now a compatibility re-export of `macblock.ui`.)
 - `State.resolver_domains` was vestigial and has been removed. (Completed: older `state.json` keys are ignored on load.)
 - Argument parsing for `logs` and `update` is now strict (unknown flags error). (Completed)
-- HTML detection is heuristic:
-  - `update_blocklist` inspects only the first 200 chars (`src/macblock/blocklists.py:217-224`).
+- HTML detection is no longer purely heuristic: `_download` checks `Content-Type` and `update_blocklist` scans a larger prefix. (Completed)
 
 2) Why
 - Duplicated UI logic increases maintenance cost and makes it easier to introduce inconsistent output.

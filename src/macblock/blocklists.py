@@ -144,6 +144,15 @@ def _download(url: str, *, expected_sha256: str | None = None) -> str:
     total = 0
 
     with urllib.request.urlopen(req, timeout=30) as resp:
+        content_type = None
+        if hasattr(resp, "headers"):
+            content_type = resp.headers.get("Content-Type")
+
+        if content_type and "text/html" in content_type.lower():
+            raise MacblockError(
+                f"downloaded blocklist looks like HTML (Content-Type: {content_type})"
+            )
+
         while True:
             chunk = resp.read(64 * 1024)
             if not chunk:
@@ -302,7 +311,7 @@ def update_blocklist(source: str | None = None, sha256: str | None = None) -> in
             spinner.fail("Downloaded blocklist is empty")
             raise MacblockError("downloaded blocklist is empty")
 
-        head = raw.lstrip()[:200].lower()
+        head = raw.lstrip()[:4096].lower()
         if (
             head.startswith("<!doctype html")
             or head.startswith("<html")

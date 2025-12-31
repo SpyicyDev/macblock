@@ -171,6 +171,32 @@ def test_update_blocklist_does_not_drift_state_on_sha_mismatch(
     assert calls == {"save": 0, "reload": 0, "write": 0}
 
 
+def test_download_rejects_html_content_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeResponse:
+        def __init__(self):
+            self.headers = {"Content-Type": "text/html; charset=utf-8"}
+            self._sent = False
+
+        def read(self, _n: int) -> bytes:
+            if self._sent:
+                return b""
+            self._sent = True
+            return b"0.0.0.0 ads.example\n"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(
+        blocklists.urllib.request, "urlopen", lambda *_a, **_k: _FakeResponse()
+    )
+
+    with pytest.raises(MacblockError, match=r"Content-Type"):
+        blocklists._download("https://example.invalid/list")
+
+
 @pytest.mark.parametrize("payload", ["", "\n", " \n\t"])
 def test_update_blocklist_rejects_empty_download_does_not_drift(
     payload: str,
