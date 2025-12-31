@@ -725,7 +725,7 @@ External support
 
 3) Implementation steps
 - Cache flush (best-effort): run `dscacheutil -flushcache` and `killall -HUP mDNSResponder` after successful apply, ignoring failures. (Completed)
-- Port blocker messaging: when `blocker` contains `dnsmasq` (`src/macblock/install.py:80-94`), suggest `brew services stop dnsmasq` / `brew uninstall dnsmasq` if appropriate.
+- Port blocker messaging: when `blocker` contains `dnsmasq` (`src/macblock/install.py:80-94`), suggest `brew services stop dnsmasq` / `brew uninstall dnsmasq` if appropriate. (Completed)
 - Docs: add a short troubleshooting note referencing `.local`/Bonjour.
 
 4) Tests

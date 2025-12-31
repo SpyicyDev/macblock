@@ -282,8 +282,11 @@ def _run_preflight_checks(force: bool) -> tuple[str, str]:
                     spinner.fail(f"Port {DNSMASQ_LISTEN_PORT} in use by {blocker}")
                     raise MacblockError(
                         f"Port {DNSMASQ_LISTEN_PORT} is in use by {blocker}.\n"
-                        "  This may be from a previous installation.\n"
-                        "  Run: sudo macblock install --force"
+                        "  If dnsmasq is running via Homebrew, stop it:\n"
+                        "    brew services stop dnsmasq\n"
+                        "  If this is a stale macblock install, try:\n"
+                        "    sudo macblock uninstall --force\n"
+                        "  Then re-run: sudo macblock install"
                     )
             else:
                 spinner.fail(f"Port {DNSMASQ_LISTEN_PORT} in use")

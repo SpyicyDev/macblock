@@ -78,6 +78,23 @@ def test_run_preflight_checks_raises_when_dnsmasq_missing(
         install._run_preflight_checks(force=False)
 
 
+def test_run_preflight_checks_port_53_dnsmasq_includes_homebrew_hint(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(install, "Spinner", _DummySpinner)
+    monkeypatch.setattr(install, "_check_dnsmasq_installed", lambda: (True, "dnsmasq"))
+    monkeypatch.setattr(
+        install,
+        "_check_port_available",
+        lambda _addr, _port: (False, "dnsmasq"),
+    )
+
+    with pytest.raises(MacblockError) as exc:
+        install._run_preflight_checks(force=False)
+
+    assert "brew services stop dnsmasq" in str(exc.value)
+
+
 def test_restore_dns_from_state_calls_restore(monkeypatch: pytest.MonkeyPatch):
     calls = []
 
