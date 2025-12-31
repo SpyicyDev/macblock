@@ -1,62 +1,31 @@
 from __future__ import annotations
 
-import sys
+from macblock import ui as _ui
 
+Colors = _ui.Colors
+color = _ui.color
+success = _ui.success
+error = _ui.error
+warning = _ui.warning
+info = _ui.info
+bold = _ui.bold
+dim = _ui.dim
+print_success = _ui.print_success
+print_warning = _ui.print_warning
+print_info = _ui.print_info
+print_error = _ui.print_error
 
-class Colors:
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    BLUE = "\033[94m"
-    MAGENTA = "\033[95m"
-    CYAN = "\033[96m"
-    WHITE = "\033[97m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    RESET = "\033[0m"
-
-
-def color(text: str, *styles: str) -> str:
-    if not sys.stdout.isatty():
-        return text
-    return "".join(styles) + text + Colors.RESET
-
-
-def success(text: str) -> str:
-    return color(text, Colors.GREEN)
-
-
-def error(text: str) -> str:
-    return color(text, Colors.RED)
-
-
-def warning(text: str) -> str:
-    return color(text, Colors.YELLOW)
-
-
-def info(text: str) -> str:
-    return color(text, Colors.CYAN)
-
-
-def bold(text: str) -> str:
-    return color(text, Colors.BOLD)
-
-
-def dim(text: str) -> str:
-    return color(text, Colors.DIM)
-
-
-def print_success(text: str) -> None:
-    print(success(text))
-
-
-def print_warning(text: str) -> None:
-    print(warning(text))
-
-
-def print_info(text: str) -> None:
-    print(info(text))
-
-
-def print_error(text: str) -> None:
-    print(error(text), file=sys.stderr)
+__all__ = [
+    "Colors",
+    "bold",
+    "color",
+    "dim",
+    "error",
+    "info",
+    "print_error",
+    "print_info",
+    "print_success",
+    "print_warning",
+    "success",
+    "warning",
+]

@@ -644,7 +644,7 @@ External support
 #### Low risk / maintainability nits
 
 1) What to change
-- Duplicate UI helpers exist in both `src/macblock/colors.py` (e.g., `print_success` at `src/macblock/colors.py:49-50`) and `src/macblock/ui.py` (e.g., `status_ok` at `src/macblock/ui.py:117-118`, plus its own `Colors` class at `src/macblock/ui.py:13-23`).
+- Duplicate UI helpers existed in both `src/macblock/colors.py` and `src/macblock/ui.py`. (Completed: `src/macblock/colors.py` is now a compatibility re-export of `macblock.ui`.)
 - `State.resolver_domains` appears vestigial:
   - Field exists in dataclass (`src/macblock/state.py:23`) and is loaded from JSON (`src/macblock/state.py:91-97`), but `replace_state` always overwrites it to `[]` (`src/macblock/state.py:116-127`) and `save_state_atomic` never persists it (`src/macblock/state.py:133-140`).
   - Install seeds it as `[]` (`src/macblock/install.py:455`).

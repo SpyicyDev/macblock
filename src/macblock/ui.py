@@ -33,6 +33,10 @@ def _color(text: str, *styles: str) -> str:
     return "".join(styles) + text + Colors.RESET
 
 
+def color(text: str, *styles: str) -> str:
+    return _color(text, *styles)
+
+
 def green(text: str) -> str:
     return _color(text, Colors.GREEN)
 
