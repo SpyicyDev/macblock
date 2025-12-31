@@ -750,7 +750,7 @@ External support
 
 1) What to change
 - Dependabot is not currently configured (no `.github/dependabot.yml` / `.github/dependabot.yaml` found).
-- Ruff is used in CI (`.github/workflows/ci.yml:31-35`) but there is no explicit `[tool.ruff]` configuration in `pyproject.toml` (`pyproject.toml:52-69`), so only defaults apply.
+- Ruff is used in CI (`.github/workflows/ci.yml:31-35`) and now has an explicit `[tool.ruff]` configuration in `pyproject.toml`. (Completed)
 
 2) Why
 - Dependabot reduces dependency drift and keeps dev tooling current.
@@ -758,7 +758,7 @@ External support
 
 3) Implementation steps
 - Add `.github/dependabot.yml` to check Python dependencies (pyproject) on a weekly cadence.
-- Add `[tool.ruff]` config to `pyproject.toml` to enable additional rule families incrementally (start with low-noise rules) and explicitly select/ignore as desired.
+- Add `[tool.ruff]` config to `pyproject.toml` to enable additional rule families incrementally (start with low-noise rules) and explicitly select/ignore as desired. (Completed)
 
 4) Tests
 - Validate in CI by opening a PR:
@@ -1024,7 +1024,7 @@ Potential improvements (not necessarily bugs):
 ## 8) CI / Quality Coverage Gaps (Coverage Gap)
 
 - CI covers formatting/lint/types/tests well, but does not include packaging build checks on PR/push or a Dependabot configuration. Dependency vulnerability scanning (e.g., pip-audit/safety) is possible, but ROI is limited here because runtime dependencies are currently empty.
-- Ruff runs its default rule set (no `[tool.ruff]` config); if you want stricter quality/security checks, consider enabling additional rule families.
+- Ruff has an explicit `[tool.ruff]` config; consider enabling additional rule families incrementally if you want stricter checks.
 - Repo-wide scans found no TODO/FIXME/XXX markers in `src/` or `tests/`, and no `shell=True` usage.
 
 ## Recommendations (Prioritized)
