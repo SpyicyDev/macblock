@@ -625,7 +625,6 @@ def run_daemon() -> int:
                     blocklist_source=None,
                     dns_backup={},
                     managed_services=[],
-                    resolver_domains=[],
                 )
 
             if _should_wait_for_network_before_apply(state_for_wait):

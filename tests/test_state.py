@@ -17,7 +17,6 @@ def test_save_state_atomic_pins_mode(tmp_path) -> None:
             blocklist_source=None,
             dns_backup={},
             managed_services=[],
-            resolver_domains=[],
         ),
     )
 
@@ -35,7 +34,6 @@ def test_save_state_atomic_writes_json(tmp_path) -> None:
             blocklist_source="src",
             dns_backup={},
             managed_services=["Wi-Fi"],
-            resolver_domains=[],
         ),
     )
 
@@ -73,6 +71,18 @@ def test_load_state_returns_default_when_missing(tmp_path) -> None:
     st = load_state(tmp_path / "missing.json")
     assert st.enabled is False
     assert st.resume_at_epoch is None
+
+
+def test_load_state_ignores_legacy_resolver_domains(tmp_path) -> None:
+    path = tmp_path / "state.json"
+    path.write_text(
+        '{"schema_version": 2, "enabled": false, "resolver_domains": ["x.example"]}',
+        encoding="utf-8",
+    )
+
+    st = load_state(path)
+    assert st.enabled is False
+    assert hasattr(st, "resolver_domains") is False
 
 
 def test_load_state_raises_on_read_oserror(

@@ -452,7 +452,6 @@ def do_install(force: bool = False, skip_update: bool = False) -> int:
                     blocklist_source=None,
                     dns_backup={},
                     managed_services=[],
-                    resolver_domains=[],
                 ),
             )
             _chown_root(SYSTEM_STATE_FILE)

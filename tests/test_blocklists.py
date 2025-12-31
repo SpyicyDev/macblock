@@ -268,7 +268,6 @@ def test_update_blocklist_rolls_back_on_reload_failure_existing_files(
             blocklist_source="old",
             dns_backup={},
             managed_services=[],
-            resolver_domains=[],
         ),
     )
 

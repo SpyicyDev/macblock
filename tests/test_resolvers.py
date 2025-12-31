@@ -50,7 +50,6 @@ def test_collect_upstream_defaults_uses_configured_fallbacks(
         blocklist_source=None,
         dns_backup={},
         managed_services=[],
-        resolver_domains=[],
     )
 
     assert daemon._collect_upstream_defaults(st, exclude=set()) == ["9.9.9.9"]
@@ -77,7 +76,6 @@ def test_collect_upstream_defaults_does_not_use_fallbacks_if_scutil_has_defaults
         blocklist_source=None,
         dns_backup={},
         managed_services=[],
-        resolver_domains=[],
     )
 
     assert daemon._collect_upstream_defaults(st, exclude=set()) == ["8.8.8.8"]
@@ -104,7 +102,6 @@ def test_collect_upstream_defaults_ignores_state_dns_backup_for_upstreams(
         blocklist_source=None,
         dns_backup={"Wi-Fi": {"dns": ["4.4.4.4"], "search": None, "dhcp": None}},
         managed_services=[],
-        resolver_domains=[],
     )
 
     assert daemon._collect_upstream_defaults(st, exclude=set()) == ["9.9.9.9"]

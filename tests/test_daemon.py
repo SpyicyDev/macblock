@@ -54,7 +54,6 @@ def test_seconds_until_resume_none_when_disabled(monkeypatch: pytest.MonkeyPatch
         blocklist_source=None,
         dns_backup={},
         managed_services=[],
-        resolver_domains=[],
     )
     assert daemon._seconds_until_resume(st) is None
 
@@ -68,7 +67,6 @@ def test_seconds_until_resume_counts_down(monkeypatch: pytest.MonkeyPatch):
         blocklist_source=None,
         dns_backup={},
         managed_services=[],
-        resolver_domains=[],
     )
     assert daemon._seconds_until_resume(st) == 30.0
 
@@ -96,7 +94,6 @@ def test_update_upstreams_writes_defaults_and_per_domain(
         blocklist_source=None,
         dns_backup={},
         managed_services=[],
-        resolver_domains=[],
     )
 
     changed = daemon._update_upstreams(st)
@@ -156,7 +153,6 @@ def test_apply_state_enables_blocking_and_persists_state(
             blocklist_source=None,
             dns_backup={},
             managed_services=[],
-            resolver_domains=[],
         ),
     )
 
@@ -218,7 +214,6 @@ def test_apply_state_paused_restores_dns(tmp_path, monkeypatch: pytest.MonkeyPat
                 "Wi-Fi": {"dns": ["9.9.9.9"], "search": ["corp"], "dhcp": None}
             },
             managed_services=["Wi-Fi"],
-            resolver_domains=[],
         ),
     )
 
@@ -248,7 +243,6 @@ def _mk_state(*, enabled: bool, resume_at_epoch: int | None) -> State:
         blocklist_source=None,
         dns_backup={},
         managed_services=[],
-        resolver_domains=[],
     )
 
 
@@ -365,7 +359,6 @@ def test_run_daemon_exits_after_consecutive_failures(
         blocklist_source=None,
         dns_backup={},
         managed_services=[],
-        resolver_domains=[],
     )
     monkeypatch.setattr(daemon, "load_state", lambda _p: st)
 

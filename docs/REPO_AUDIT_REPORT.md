@@ -645,9 +645,7 @@ External support
 
 1) What to change
 - Duplicate UI helpers existed in both `src/macblock/colors.py` and `src/macblock/ui.py`. (Completed: `src/macblock/colors.py` is now a compatibility re-export of `macblock.ui`.)
-- `State.resolver_domains` appears vestigial:
-  - Field exists in dataclass (`src/macblock/state.py:23`) and is loaded from JSON (`src/macblock/state.py:91-97`), but `replace_state` always overwrites it to `[]` (`src/macblock/state.py:116-127`) and `save_state_atomic` never persists it (`src/macblock/state.py:133-140`).
-  - Install seeds it as `[]` (`src/macblock/install.py:455`).
+- `State.resolver_domains` was vestigial and has been removed. (Completed: older `state.json` keys are ignored on load.)
 - Argument parsing is permissive:
   - Logs parser silently ignores unknown flags (`src/macblock/cli.py:169-184`).
   - Update parser silently ignores unknown flags (`src/macblock/cli.py:208-217`).

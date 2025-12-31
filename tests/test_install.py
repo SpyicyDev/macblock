@@ -93,7 +93,6 @@ def test_restore_dns_from_state_calls_restore(monkeypatch: pytest.MonkeyPatch):
         blocklist_source=None,
         dns_backup={"Wi-Fi": {"dns": ["8.8.8.8"], "search": ["corp"], "dhcp": None}},
         managed_services=["Wi-Fi"],
-        resolver_domains=[],
     )
 
     install._restore_dns_from_state(st)
@@ -137,7 +136,6 @@ def test_do_uninstall_force_continues_when_unlink_fails(
         blocklist_source=None,
         dns_backup={},
         managed_services=[],
-        resolver_domains=[],
     )
     monkeypatch.setattr(install, "load_state", lambda _p: st)
 
@@ -216,7 +214,6 @@ def test_do_uninstall_non_force_raises_on_unlink_failure(
         blocklist_source=None,
         dns_backup={},
         managed_services=[],
-        resolver_domains=[],
     )
     monkeypatch.setattr(install, "load_state", lambda _p: st)
 
@@ -291,7 +288,6 @@ def test_do_uninstall_force_reports_dir_leftovers_when_rmdir_fails(
         blocklist_source=None,
         dns_backup={},
         managed_services=[],
-        resolver_domains=[],
     )
     monkeypatch.setattr(install, "load_state", lambda _p: st)
 
@@ -362,7 +358,6 @@ def test_do_uninstall_non_force_raises_on_rmdir_failure(
         blocklist_source=None,
         dns_backup={},
         managed_services=[],
-        resolver_domains=[],
     )
     monkeypatch.setattr(install, "load_state", lambda _p: st)
 

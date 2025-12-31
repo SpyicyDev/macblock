@@ -23,7 +23,6 @@ class State:
     blocklist_source: str | None
     dns_backup: dict[str, dict[str, list[str] | None]]
     managed_services: list[str]
-    resolver_domains: list[str]
 
 
 def _iso_to_epoch_seconds(value: str) -> int | None:
@@ -47,7 +46,6 @@ def load_state(path: Path) -> State:
             blocklist_source=None,
             dns_backup={},
             managed_services=[],
-            resolver_domains=[],
         )
 
     try:
@@ -108,13 +106,6 @@ def load_state(path: Path) -> State:
             if isinstance(s, str) and s:
                 managed_services.append(s)
 
-    resolver_domains_raw = data.get("resolver_domains")
-    resolver_domains: list[str] = []
-    if isinstance(resolver_domains_raw, list):
-        for d in resolver_domains_raw:
-            if isinstance(d, str) and d:
-                resolver_domains.append(d)
-
     try:
         schema_version = int(data.get("schema_version", CURRENT_SCHEMA_VERSION))
     except (TypeError, ValueError) as e:
@@ -134,7 +125,6 @@ def load_state(path: Path) -> State:
         blocklist_source=str(src) if src is not None else None,
         dns_backup=dns_backup,
         managed_services=managed_services,
-        resolver_domains=resolver_domains,
     )
 
 
@@ -146,7 +136,6 @@ def replace_state(st: State, **updates: Any) -> State:
         "blocklist_source": st.blocklist_source,
         "dns_backup": st.dns_backup,
         "managed_services": st.managed_services,
-        "resolver_domains": [],
     }
     payload.update(updates)
     return State(**payload)
