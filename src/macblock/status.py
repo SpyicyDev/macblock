@@ -223,12 +223,15 @@ def show_status() -> int:
         fallbacks = [
             x for x in (upstream_info.get("fallbacks") or []) if isinstance(x, str)
         ]
-        fallbacks_active = bool(upstream_info.get("fallbacks_active"))
+        raw_active = upstream_info.get("fallbacks_active")
+        fallbacks_active = raw_active if isinstance(raw_active, bool) else None
         if fallbacks:
-            if fallbacks_active:
+            if fallbacks_active is True:
                 status_active("Fallbacks", _format_list(fallbacks) + " (ACTIVE)")
-            else:
+            elif fallbacks_active is False:
                 status_inactive("Fallbacks", _format_list(fallbacks) + " (inactive)")
+            else:
+                status_info("Fallbacks", _format_list(fallbacks))
         else:
             status_warn("Fallbacks", "none")
     else:

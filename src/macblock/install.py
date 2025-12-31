@@ -40,6 +40,7 @@ from macblock.constants import (
     VAR_DB_DNSMASQ_PID,
     VAR_DB_DIR,
     VAR_DB_UPSTREAM_CONF,
+    VAR_DB_UPSTREAM_INFO,
 )
 from macblock.dnsmasq import render_dnsmasq_conf
 from macblock.errors import MacblockError
@@ -657,6 +658,7 @@ def do_uninstall(force: bool = False) -> int:
             VAR_DB_DNSMASQ_PID,
             VAR_DB_DNSMASQ_DIR / "dnsmasq.log",
             VAR_DB_UPSTREAM_CONF,
+            VAR_DB_UPSTREAM_INFO,
             VAR_DB_DAEMON_PID,
             VAR_DB_DAEMON_LAST_APPLY,
         ]:
